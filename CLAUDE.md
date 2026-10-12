@@ -6,6 +6,7 @@ Custom Lovelace cards for the A Corujeira Home Assistant dashboard. Installed vi
 
 - `cards/corujeira-*-card.js`: one file per card (flow, span, forecast, meteogram, hoot, silo, fire, air). Each card's options are documented in its header comment.
 - `dist/corujeira-dashboard.js`: the built bundle HACS serves.
+- `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Change the main dashboard, not the kitchen one.
 - `assets/`: standalone animated SVGs (`hoot.svg`, `nimbu.svg`).
 - The fire card is no longer on the dashboard (the ha-vigia integration replaced it).
 
@@ -41,7 +42,7 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - 5,000 L tank = 100%. Level can exceed 100 when overfilled; dashed line at 100%.
 - Drawing style: every line is a filled brush stroke from hand-placed points (Catmull-Rom, width swelling about ±16%, gentle wobble, tapered round ends, seeded so it never changes), matching hand-drawn icons in soft charcoal. Shape lives in `BODY` and `drawing()`. Keep it subtle when tuning. Default ink is the text colour softened to 68% against the card background; `ink` overrides.
 - Pump row: switch (disabled while full), 30/60/90 pills, countdown and watts while running. Optional `creek` option adds the creek-clear switch row.
-- `read_only: true` keeps the pump and creek rows as status only (no switches, pills or pop-ups). Used on the communal kitchen dashboard (`corujeira-kitchen`).
+- `read_only: true` keeps the pump and creek rows as status only (no switches, pills or pop-ups). The kitchen mirror sets it automatically.
 
 ### Air
 
