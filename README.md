@@ -4,6 +4,7 @@ Custom Lovelace cards for the Home Assistant dashboard at A Corujeira, an off-gr
 
 | Card | Type | What it shows |
 | --- | --- | --- |
+| [`corujeira-air-card.js`](cards/corujeira-air-card.js) | `custom:corujeira-air-card` | Indoor air as one plain-language verdict with advice (damp advice compares the water in the air inside and out, and leads with the wood burner in cold weather); a detail mode for a pop-up shows each reading on a banded bar with a reference line. |
 | [`corujeira-flow-card.js`](cards/corujeira-flow-card.js) | `custom:corujeira-flow-card` | Power flow: up to 3 sources on top, a hub, up to 4 loads below, with animated wiring-diagram lines. |
 | [`corujeira-span-card.js`](cards/corujeira-span-card.js) | `custom:corujeira-span-card` | Wraps any card and overlays range pills driven by an `input_select`. |
 | [`corujeira-forecast-card.js`](cards/corujeira-forecast-card.js) | `custom:corujeira-forecast-card` | Next 12 hours (2-hourly) above a 5-day forecast, from any `weather` entity. |
@@ -14,7 +15,7 @@ Custom Lovelace cards for the Home Assistant dashboard at A Corujeira, an off-gr
 
 ## Install
 
-All seven cards ship as one file, `dist/corujeira-dashboard.js`.
+All eight cards ship as one file, `dist/corujeira-dashboard.js`.
 
 **With HACS:** HACS > three-dot menu > Custom repositories > add `eyeofeska/corujeira-dashboard`, type Dashboard. Download it, then refresh the browser. HACS registers the resource for you, and new releases show up as updates.
 
@@ -29,6 +30,18 @@ Options are documented in the comment block at the top of each file in `cards/`.
 3. Bump `version` in `package.json` and push to `main`. With no releases published, HACS tracks the latest commit on `main` and offers each push as an update (HACS checks about every 48 hours; "Update information" in HACS checks now).
 
 ## Examples
+
+```yaml
+type: custom:corujeira-air-card       # mode: detail for a pop-up
+humidity: sensor.yurt_humidity
+co2: sensor.yurt_co2
+radon: sensor.yurt_radon
+pm25: sensor.yurt_pm2_5
+voc: sensor.yurt_voc
+temperature: sensor.yurt_temperature
+outdoor: weather.forecast_home
+navigate: "#air"
+```
 
 ```yaml
 type: custom:corujeira-forecast-card
