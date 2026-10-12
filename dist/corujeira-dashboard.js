@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.7.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.7.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-silo-card, corujeira-span-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.7.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.7.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -74,7 +74,7 @@ class CorujeiraAirCard extends HTMLElement {
     if (!prev || ids.some(id => prev.states[id] !== h.states[id])) this._render();
   }
   getCardSize() { return this._c && this._c.mode === "detail" ? 8 : 2; }
-  getGridOptions() { return { columns: 12, rows: "auto" }; }
+  getGridOptions() { return { columns: "full", rows: "auto" }; }
 
   _build() {
     const detail = this._c.mode === "detail";
