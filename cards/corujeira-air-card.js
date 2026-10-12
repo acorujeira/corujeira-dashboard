@@ -69,7 +69,7 @@ class CorujeiraAirCard extends HTMLElement {
     if (!prev || ids.some(id => prev.states[id] !== h.states[id])) this._render();
   }
   getCardSize() { return this._c && this._c.mode === "detail" ? 8 : 2; }
-  getGridOptions() { return { columns: "full", rows: "auto" }; }
+  getGridOptions() { return { columns: 12, rows: "auto" }; }
 
   _build() {
     const detail = this._c.mode === "detail";
