@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.7.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.8.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-silo-card, corujeira-span-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.7.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.8.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1991,6 +1991,7 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
      creek:      input_boolean that says the creek has been checked and is running clear (optional, shown under the pump;
                  on = clear, off = check it after rain)
      creek_name: default "Creek"
+     read_only:  true shows the pump and creek as status only: no switches, no run-time pills, no pop-ups (default false)
      ink:        line colour of the drawing (default a soft charcoal: the theme's text colour, softened)
      tap_action: { action: more-info | navigate | none, navigation_path } (default more-info on entity); applies to the tank and figures
    Remove this resource to revert. */
@@ -2074,7 +2075,7 @@ class CorujeiraSiloCard extends HTMLElement {
     // 100% sits below the collar line so the dome above it reads as headroom, not storage.
     this._top = BOTTOM - (BOTTOM - FULL_LINE) * 100 / (100 + this._c.headroom);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    const col = this._c.color, pump = !!this._c.pump, D = drawing(), ink = this._c.ink || "color-mix(in srgb, var(--primary-text-color) 68%, var(--card-background-color, #fff))";
+    const col = this._c.color, pump = !!this._c.pump, ro = !!this._c.read_only, D = drawing(), ink = this._c.ink || "color-mix(in srgb, var(--primary-text-color) 68%, var(--card-background-color, #fff))";
     this.shadowRoot.innerHTML = `
       <style>
         :host { display:block; }
@@ -2136,6 +2137,7 @@ class CorujeiraSiloCard extends HTMLElement {
         .sw.small { width:46px; height:26px; }
         .sw.small::after { width:20px; height:20px; }
         .sw.small[aria-checked="true"]::after { transform:translateX(20px); }
+        .ro .pname { cursor:default; }
       </style>
       <ha-card>
         <div class="row">
@@ -2165,18 +2167,18 @@ class CorujeiraSiloCard extends HTMLElement {
               <div class="sub dist"></div>
             </div>
             ${pump ? `
-            <div class="pump">
+            <div class="pump${ro ? " ro" : ""}">
               <div class="ptop">
                 <ha-icon></ha-icon>
                 <div class="ptext"><div class="pname"></div><div class="pstate"></div></div>
-                <button class="sw" role="switch" aria-checked="false"></button>
+                ${ro ? "" : `<button class="sw" role="switch" aria-checked="false"></button>`}
               </div>
-              <div class="pills"></div>
+              ${ro ? "" : `<div class="pills"></div>`}
               ${this._c.creek ? `
               <div class="ptop creek">
                 <ha-icon icon="mdi:waves"></ha-icon>
                 <div class="ptext"><div class="pname cname"></div><div class="pstate cstate"></div></div>
-                <button class="sw small csw" role="switch" aria-checked="false"></button>
+                ${ro ? "" : `<button class="sw small csw" role="switch" aria-checked="false"></button>`}
               </div>` : ""}
             </div>` : ""}
           </div>
@@ -2185,13 +2187,16 @@ class CorujeiraSiloCard extends HTMLElement {
     const r = this.shadowRoot, q = s => r.querySelector(s);
     this._el = { svg: q("svg"), levels: r.querySelectorAll(".level"), pcts: r.querySelectorAll(".pct"), name: q(".name"),
       litres: q(".litres"), cap: q(".cap"), dist: q(".dist"), sw: q(".sw"), stream: q(".stream"), pstate: q(".pstate"), pills: q(".pills"),
-      csw: q(".csw"), cstate: q(".cstate") };
+      csw: q(".csw"), cstate: q(".cstate"), cname: q(".cname") };
     this._el.name.textContent = this._c.name;
     const open = () => this._tap();
     [q(".tank"), q(".info")].forEach(el => el.addEventListener("click", open));
     if (pump) {
       q(".ptop ha-icon").setAttribute("icon", this._c.pump_icon);
       q(".pname").textContent = this._c.pump_name;
+      if (this._el.cname) this._el.cname.textContent = this._c.creek_name || "Creek";
+    }
+    if (pump && !ro) {
       q(".pname").addEventListener("click", () => this._more(this._c.pump));
       this._el.sw.setAttribute("aria-label", this._c.pump_name);
       this._el.sw.addEventListener("click", e => {
@@ -2201,7 +2206,6 @@ class CorujeiraSiloCard extends HTMLElement {
       });
       if (this._el.csw) {
         const cname = this._c.creek_name || "Creek";
-        q(".cname").textContent = cname;
         q(".cname").addEventListener("click", () => this._more(this._c.creek));
         this._el.csw.setAttribute("aria-label", `${cname} clear`);
         this._el.csw.addEventListener("click", e => {
@@ -2277,12 +2281,14 @@ class CorujeiraSiloCard extends HTMLElement {
     const avail = !!ps && !["unavailable", "unknown"].includes(ps.state);
     const full = lvl != null && lvl >= 100;
     this._el.svg.classList.toggle("on", on);
-    this._el.sw.setAttribute("aria-checked", on);
-    this._el.sw.disabled = !avail || (full && !on);
-    this._el.sw.title = full && !on ? "Silo is full" : "";
+    if (this._el.sw) {
+      this._el.sw.setAttribute("aria-checked", on);
+      this._el.sw.disabled = !avail || (full && !on);
+      this._el.sw.title = full && !on ? "Silo is full" : "";
+    }
 
     const opts = (rs && rs.attributes.options) || [];
-    if (JSON.stringify(opts) !== this._opts) {
+    if (this._el.pills && JSON.stringify(opts) !== this._opts) {
       this._opts = JSON.stringify(opts);
       this._el.pills.innerHTML = "";
       opts.forEach(o => {
@@ -2297,16 +2303,18 @@ class CorujeiraSiloCard extends HTMLElement {
         this._el.pills.appendChild(b);
       });
     }
-    this._el.pills.querySelectorAll("button").forEach(b => {
+    if (this._el.pills) this._el.pills.querySelectorAll("button").forEach(b => {
       const sel = rs && b.dataset.o === rs.state;
       b.classList.toggle("on", !!sel);
       b.setAttribute("aria-pressed", !!sel);
     });
 
-    if (this._el.csw) {
+    if (this._el.cstate) {
       const clear = !!cs && cs.state === "on", known = !!cs && ["on", "off"].includes(cs.state);
-      this._el.csw.setAttribute("aria-checked", clear);
-      this._el.csw.disabled = !known;
+      if (this._el.csw) {
+        this._el.csw.setAttribute("aria-checked", clear);
+        this._el.csw.disabled = !known;
+      }
       this._el.cstate.textContent = !known ? "Unavailable" : clear ? "Running clear" : "Check it after rain";
       this._el.cstate.classList.toggle("check", known && !clear);
     }
