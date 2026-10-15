@@ -243,7 +243,17 @@ class CorujeiraHootCard extends HTMLElement {
       out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}` });
     } else {
       const n = num(c.fires_nearby);
-      if (n) out.push({ pri: 2, kind: "fire", text: `${n === 1 ? "A fire" : n + " fires"} within ${Math.round((st(c.fires_nearby).attributes.radius_km) || 30)} km. Vigia is watching.` });
+      if (n) {
+        const a = st(c.fires_nearby).attributes, R = Math.round(a.radius_km || 30);
+        const inc = a.incidents || 0, heat = a.heat_spots != null ? a.heat_spots : Math.max(0, n - inc);
+        const bits = [];
+        if (inc) bits.push(`${inc === 1 ? "A reported fire" : inc + " reported fires"}`);
+        if (heat) bits.push(`${heat === 1 ? "a satellite heat spot" : heat + " satellite heat spots"}`);
+        let text = `${bits.join(" and ")} within ${R} km.`;
+        text = text[0].toUpperCase() + text.slice(1);
+        out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
+          : `${text} None reported to civil protection yet. Vigia is watching.` });
+      }
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
     if (top >= 3) {
@@ -253,8 +263,10 @@ class CorujeiraHootCard extends HTMLElement {
         : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.` });
     } else if (c.burn_window && r0 != null && r0 <= 2 && (r1 == null || r1 <= 2)) {
       const m = new Date().getMonth() + 1;
-      // Only in the dry months, when a low-risk day is worth noticing; in winter it is always low.
-      if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit." });
+      // Only in the dry months, when a calm day is worth noticing; in winter the risk is nearly always low.
+      if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
+        ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
+        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass." });
     }
     return out;
   }

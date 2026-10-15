@@ -1,6 +1,6 @@
 {
   "name": "corujeira-dashboard",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "private": true,
   "description": "Custom Lovelace cards for the A Corujeira Home Assistant dashboard.",
   "license": "MIT",

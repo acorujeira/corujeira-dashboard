@@ -32,7 +32,7 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - Speech bubble beside a speaker, one recolourable icon per line. Kinds: mushroom, plant, fire, frost, rain, wind, heat, power, water (`colors` option). Bold lead phrase, 6 lines then "N more".
 - Speakers: `speaker: hoot | nimbu`. `swap` (default on unless `navigate` is set) lets a tap swap them, remembered in localStorage `corujeira-land:speaker`, which wins over config.
 - Weather advice is computed in the meteogram card's `_advice` (each line tagged with a kind) and published via window event `corujeira-land-advice`, `window.__corujeiraLand` and localStorage `corujeira-land:advice`. Hoot needs the meteogram on the same dashboard; advice older than 18 h is dropped.
-- Fire lines come from Vigia sensors in Hoot's `_fire`: active alert, risk high or above (today or tomorrow), nearby fires, and a low-risk line May to Oct (`burn_window: false` turns it off).
+- Fire lines come from Vigia sensors in Hoot's `_fire`: active alert, risk high or above (today or tomorrow), nearby fires (reported incidents and satellite heat spots named separately, from the `incidents` and `heat_spots` attributes of `sensor.vigia_fires_nearby`), and a calm-day line May to Oct, worded for low or moderate risk (`burn_window: false` turns it off).
 - Fire line tone: practical, not over-conservative. The land doesn't burn pruning piles, so no burning or burn-registration advice. The low-risk line suggests grinding, welding, chainsaw work, or a fire in the sauna or fire pit.
 - New weather rules go in the meteogram's `_advice`; new fire rules go in Hoot's `_fire`.
 - Meteogram low-silo line (`silo`, `silo_low` default 40%) is off on the dashboard. Scale: 100% = 5,000 L.
