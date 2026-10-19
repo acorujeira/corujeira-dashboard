@@ -8,11 +8,13 @@
    fire (fire lines, default true), burn_window (low-risk work window nudge May to Oct, default true),
    fire_risk / fire_risk_tomorrow / alert_level / fires_nearby (entity ids, default Vigia's),
    colors (per kind: mushroom, plant, fire, frost, rain, wind, heat, power, water),
-   navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18).
+   navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
+   compact (one colour-coded keyword chip per line instead of sentences, e.g. "Frost Thu", "Foraging"; with
+   navigate set, tapping anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
 const KINDS = {
-  mushroom: "#A0673A", plant: "#2E7D4F", fire: "#C2574A", frost: "#3D9BC9", rain: "#2A6FB0",
+  mushroom: "#A0673A", plant: "#2E7D4F", fire: "#D9772B", frost: "#3D9BC9", rain: "#2A6FB0",
   wind: "#5E665B", heat: "#D9573F", power: "#B98A16", water: "#2F8F9D",
 };
 // 24px line icons drawn with currentColor, so a colour on the wrapper recolours them
@@ -103,12 +105,14 @@ const RISK = { 1: "low", 2: "moderate", 3: "high", 4: "very high", 5: "maximum" 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 // the lead phrase (up to the first colon, or the first sentence) in bold so the lines scan
 const lead = t => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); return m ? `<b>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
+// a keyword for compact mode when a line carries no tag: the lead phrase, cut to three words
+const shortTag = t => String(t).split(/[:.(]/)[0].split(/\s+/).slice(0, 3).join(" ");
 const load = () => { try { return JSON.parse(localStorage.getItem("corujeira-land:advice")); } catch (e) { return null; } };
 
 class CorujeiraHootCard extends HTMLElement {
   setConfig(c) {
     this._c = {
-      speaker: "hoot", swap: !c.navigate, max: 6, fire: true, burn_window: true, stale_hours: 18,
+      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, fire: true, burn_window: true, stale_hours: 18,
       fire_risk: "sensor.vigia_fire_risk", fire_risk_tomorrow: "sensor.vigia_fire_risk_tomorrow",
       alert_level: "sensor.vigia_alert_level", fires_nearby: "sensor.vigia_fires_nearby", ...c,
     };
@@ -188,20 +192,41 @@ class CorujeiraHootCard extends HTMLElement {
         li .ic { flex:none; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-top:-1px; }
         li .ic svg { width:15px; height:15px; }
         li b { font-weight:700; }
+        ha-card.compact { padding:10px 12px 10px 8px; }
+        .compact .wrap { align-items:center; gap:6px; }
+        .compact .who { width:52px; }
+        .compact .owl, .compact .cat { width:44px; height:51px; }
+        .compact .name { font-size:11px; }
+        .compact .sub, .compact .hello, .compact .more { display:none; }
+        .compact .bubble { margin-top:0; padding:8px 10px; }
+        .compact .bubble::before { top:calc(50% - 6px); }
+        .compact ul { flex-direction:row; flex-wrap:wrap; gap:6px; }
+        .compact li { align-items:center; gap:5px; padding:3px 10px 3px 4px; border-radius:999px; font-size:13.5px; font-weight:700; line-height:1.3; white-space:nowrap; }
+        .compact li .ic { width:20px; height:20px; margin:0; }
+        .compact li.quiet { font-weight:400; color:var(--secondary-text-color); padding-left:4px; }
+        ha-card.tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
         .more { margin-top:6px; background:none; border:none; padding:0; font:inherit; font-size:12px; color:var(--secondary-text-color); cursor:pointer; }
       </style>
-      <ha-card>
+      <ha-card class="${this._c.compact ? "compact" : ""}">
         <div class="wrap">
           <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div></div>
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
         </div>
       </ha-card>`;
     const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who");
+    const go = () => {
+      history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    };
     w.classList.add("link");
+    if (nav && this._c.compact) {
+      const card = this.shadowRoot.querySelector("ha-card");
+      card.classList.add("tap");
+      this.shadowRoot.querySelector(".bubble").addEventListener("click", go);
+    }
     w.addEventListener("click", () => {
       if (nav) {
-        history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
-        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        go();
       } else if (this._c.swap) {
         this._who = this._who === "hoot" ? "nimbu" : "hoot";
         try { localStorage.setItem("corujeira-land:speaker", this._who); } catch (e) { /* storage blocked */ }
@@ -240,7 +265,7 @@ class CorujeiraHootCard extends HTMLElement {
       const where = `${km}${a.direction ? " " + a.direction : ""}${a.upwind ? ", upwind" : ""}`;
       const what = al.state === "close" ? "Fill the buckets, keep the hoses ready, and have the go-bag by the car."
         : al.state === "upwind" ? "Smoke may reach us. Close the yurt, keep an eye on the sky and the Vigia map." : "Vigia is watching it.";
-      out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}` });
+      out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}`, tag: `Fire ${km}${a.direction ? " " + a.direction : ""}` });
     } else {
       const n = num(c.fires_nearby);
       if (n) {
@@ -252,7 +277,8 @@ class CorujeiraHootCard extends HTMLElement {
         let text = `${bits.join(" and ")} within ${R} km.`;
         text = text[0].toUpperCase() + text.slice(1);
         out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
-          : `${text} None reported to civil protection yet. Vigia is watching.` });
+          : `${text} None reported to civil protection yet. Vigia is watching.`,
+          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots` });
       }
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
@@ -260,13 +286,15 @@ class CorujeiraHootCard extends HTMLElement {
       const day = (r0 || 0) >= top ? "today" : "tomorrow";
       out.push({ pri: top >= 4 ? 1 : 2, kind: "fire", text: top >= 4
         ? `Fire risk ${RISK[top]} ${day}: no burning and no sparks outdoors (grinders, chainsaws, mowing dry grass). Keep the hose ready.`
-        : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.` });
+        : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.`,
+        tag: `Fire risk ${RISK[top]}${day === "tomorrow" ? " tomorrow" : ""}` });
     } else if (c.burn_window && r0 != null && r0 <= 2 && (r1 == null || r1 <= 2)) {
       const m = new Date().getMonth() + 1;
       // Only in the dry months, when a calm day is worth noticing; in winter the risk is nearly always low.
       if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
         ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
-        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass." });
+        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass.",
+        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate" });
     }
     return out;
   }
@@ -276,11 +304,17 @@ class CorujeiraHootCard extends HTMLElement {
     const land = this._land, fresh = land && land.ts && Date.now() - land.ts < this._c.stale_hours * 3600e3;
     const weather = fresh ? land.items || [] : [];
     const all = [...this._fire(), ...weather].sort((a, b) => a.pri - b.pri);
-    const max = this._c.max, shown = this._open ? all : all.slice(0, max);
+    const max = this._c.max, shown = this._open || this._c.compact ? all : all.slice(0, max);
     const sp = SPEAKERS[this._who] || SPEAKERS.hoot, hi = sp.hi(new Date().getHours());
     const hello = this.shadowRoot.querySelector(".hello");
     hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : `${hi} ${sp.quiet}`;
-    this.shadowRoot.querySelector("ul").innerHTML = shown.map(x => {
+    const ul = this.shadowRoot.querySelector("ul");
+    if (this._c.compact) {
+      ul.innerHTML = shown.length ? shown.map(x => {
+        const col = esc(this._colors[x.kind] || this._colors.plant);
+        return `<li style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)" title="${esc(x.text)}"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</li>`;
+      }).join("") : `<li class="quiet">${esc(!land ? sp.wait : sp.quiet)}</li>`;
+    } else ul.innerHTML = shown.map(x => {
       const col = this._colors[x.kind] || this._colors.plant;
       return `<li><span class="ic" style="color:${esc(col)};background:color-mix(in srgb, ${esc(col)} 13%, transparent)">${icon(x.kind)}</span><span>${lead(x.text)}</span></li>`;
     }).join("");

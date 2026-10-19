@@ -4,19 +4,26 @@
      - drops every card or sub-button whose entity or pop-up hash is in `hide` (at any depth; visibility
        conditions are left alone),
      - sets read_only: true on every corujeira-silo-card when `read_only` is on (pump and creek as status only),
-     - merges `set` into cards (not pop-ups) by entity (e.g. to widen a tile left alone in its row),
+     - merges `set` into cards by entity or by card type (e.g. to widen a tile left alone in its row, or to
+       make the Hoot card compact); pop-ups and the cards inside them are left as they are,
      - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
      - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
        Each column lists source section indices (0-based, in the source view); their cards are joined in
        that order into one single-width section. Sections not listed follow at the end unchanged. On a
-       narrow screen HA stacks the columns in order, so column 1 comes first.
+       narrow screen HA stacks the columns in order, so column 1 comes first,
+     - passes `kiosk_mode` through for the kiosk-mode plugin (e.g. hide_header: true),
+     - with `fit: true`, shrinks the view while it is open so it always fits the screen height without
+       scrolling (CSS zoom on the sections view, layout width kept, centred; never below `fit_min`, 0.6).
    Dashboard config:
      strategy:
        type: custom:corujeira-mirror
        source: corujeira-bubble          (url_path of the dashboard to mirror; required)
        hide: [light.outdoor_lantern_7, "#clayhouse"]
        read_only: true                   (default true)
-       set: { light.yurt_pendant_lamps: { grid_options: { columns: 12, rows: 2 } } }
+       set: { light.yurt_pendant_lamps: { grid_options: { columns: 12, rows: 2 } },
+              "custom:corujeira-hoot-card": { compact: true, navigate: "#nimbu" } }
+       kiosk_mode: { hide_header: true }
+       fit: true
        layout:                           (optional)
          view: home                      (view path; default the first view)
          columns: [[0, 2], [3, 4, 1], [5, 6]]
@@ -25,6 +32,57 @@
 (() => {
 const errorView = text => ({ views: [{ title: "Mirror", type: "sections", sections: [{ type: "grid", cards: [
   { type: "markdown", content: `**corujeira-mirror:** ${text}` }] }] }] });
+
+// Fit to screen: find the open dashboard's sections view and zoom it so its bottom sits at the bottom of the
+// window. The layout width is pinned first, so the cards lay out exactly as they would unzoomed and one
+// measurement gives the right zoom. Re-checked every second and on resize (charts load late, advice changes).
+const fitter = {
+  paths: new Map(), el: null, timer: null,
+  watch(path, min) {
+    this.paths.set(path, Math.max(0.3, Math.min(1, +min || 0.6)));
+    if (!this.timer) {
+      this.timer = setInterval(() => this.tick(), 1000);
+      window.addEventListener("resize", () => { this.reset(); this.tick(); });
+      window.addEventListener("location-changed", () => setTimeout(() => this.tick(), 50));
+    }
+    setTimeout(() => this.tick(), 50);
+  },
+  // shadow-piercing search for the first element with this tag, below a root
+  find(root, tag, depth = 0) {
+    if (!root || depth > 14) return null;
+    const kids = [...(root.children || [])];
+    if (root.shadowRoot) kids.unshift(...root.shadowRoot.children);
+    for (const k of kids) {
+      if (k.localName === tag) return k;
+      const f = this.find(k, tag, depth + 1);
+      if (f) return f;
+    }
+    return null;
+  },
+  reset() { if (this.el) { const st = this.el.style; st.zoom = st.width = st.marginLeft = st.boxSizing = ""; } },
+  tick() {
+    const path = location.pathname.split("/")[1], min = this.paths.get(path);
+    if (min == null || document.hidden) return;
+    if (!this.el || !this.el.isConnected) {
+      const ha = document.querySelector("home-assistant");
+      const panel = this.find(ha, "ha-panel-lovelace");
+      this.el = panel && this.find(panel, "hui-sections-view");
+      if (!this.el) return;
+    }
+    const v = this.el, host = v.parentNode && (v.parentNode.host || v.parentNode);
+    if (!host || !host.getBoundingClientRect) return;
+    const W = host.getBoundingClientRect().width, r = v.getBoundingClientRect();
+    const avail = window.innerHeight - Math.max(0, r.top);
+    if (!W || !r.height || avail < 240) return;
+    const z0 = parseFloat(v.style.zoom) || 1;
+    const z = Math.min(1, Math.max(min, Math.floor(z0 * avail / r.height * 1000) / 1000));
+    if (Math.abs(z - z0) < 0.004 && (z === 1 || v.style.width)) return;
+    v.style.zoom = z === 1 ? "" : String(z);
+    v.style.width = z === 1 ? "" : `${W}px`;
+    v.style.boxSizing = z === 1 ? "" : "border-box";
+    v.style.marginLeft = z === 1 ? "" : `${W * (1 - z) / (2 * z)}px`;
+  },
+};
 
 class CorujeiraMirrorStrategy extends HTMLElement {
   static async generate(c, hass) {
@@ -43,14 +101,14 @@ class CorujeiraMirrorStrategy extends HTMLElement {
 
     const hidden = o => o && typeof o === "object" && !Array.isArray(o) && !("condition" in o) &&
       (hide.has(o.entity) || hide.has(o.hash));
-    const walk = o => {
-      if (Array.isArray(o)) return o.filter(x => !hidden(x)).map(walk);
+    const walk = (o, inPop) => {
+      if (Array.isArray(o)) return o.filter(x => !hidden(x)).map(x => walk(x, inPop));
       if (o && typeof o === "object") {
-        const out = {};
-        for (const [k, v] of Object.entries(o)) out[k] = walk(v);
-        if (out.type && !("condition" in out) && out.card_type !== "pop-up") {
-          const extra = set[out.entity];
-          if (extra) Object.assign(out, extra);
+        const pop = inPop || o.card_type === "pop-up", out = {};
+        for (const [k, v] of Object.entries(o)) out[k] = walk(v, pop);
+        if (out.type && !("condition" in out) && !pop) {
+          if (set[out.entity]) Object.assign(out, set[out.entity]);
+          if (set[out.type]) Object.assign(out, set[out.type]);
         }
         if (readOnly && out.type === "custom:corujeira-silo-card") out.read_only = true;
         return out;
@@ -58,7 +116,9 @@ class CorujeiraMirrorStrategy extends HTMLElement {
       if (typeof o === "string" && to && o.includes(from)) return o.split(from).join(to);
       return o;
     };
-    const out = walk(cfg);
+    const out = walk(cfg, false);
+    if (c.kiosk_mode) out.kiosk_mode = c.kiosk_mode;
+    if (c.fit && here) fitter.watch(here, c.fit_min);
     const lay = c.layout;
     if (lay && Array.isArray(lay.columns) && lay.columns.length) {
       const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];

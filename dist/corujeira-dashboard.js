@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.10.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.11.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.10.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.11.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -872,11 +872,13 @@ if (!window.customCards.find(c => c.type === "corujeira-forecast-card"))
    fire (fire lines, default true), burn_window (low-risk work window nudge May to Oct, default true),
    fire_risk / fire_risk_tomorrow / alert_level / fires_nearby (entity ids, default Vigia's),
    colors (per kind: mushroom, plant, fire, frost, rain, wind, heat, power, water),
-   navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18).
+   navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
+   compact (one colour-coded keyword chip per line instead of sentences, e.g. "Frost Thu", "Foraging"; with
+   navigate set, tapping anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
 const KINDS = {
-  mushroom: "#A0673A", plant: "#2E7D4F", fire: "#C2574A", frost: "#3D9BC9", rain: "#2A6FB0",
+  mushroom: "#A0673A", plant: "#2E7D4F", fire: "#D9772B", frost: "#3D9BC9", rain: "#2A6FB0",
   wind: "#5E665B", heat: "#D9573F", power: "#B98A16", water: "#2F8F9D",
 };
 // 24px line icons drawn with currentColor, so a colour on the wrapper recolours them
@@ -967,12 +969,14 @@ const RISK = { 1: "low", 2: "moderate", 3: "high", 4: "very high", 5: "maximum" 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 // the lead phrase (up to the first colon, or the first sentence) in bold so the lines scan
 const lead = t => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); return m ? `<b>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
+// a keyword for compact mode when a line carries no tag: the lead phrase, cut to three words
+const shortTag = t => String(t).split(/[:.(]/)[0].split(/\s+/).slice(0, 3).join(" ");
 const load = () => { try { return JSON.parse(localStorage.getItem("corujeira-land:advice")); } catch (e) { return null; } };
 
 class CorujeiraHootCard extends HTMLElement {
   setConfig(c) {
     this._c = {
-      speaker: "hoot", swap: !c.navigate, max: 6, fire: true, burn_window: true, stale_hours: 18,
+      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, fire: true, burn_window: true, stale_hours: 18,
       fire_risk: "sensor.vigia_fire_risk", fire_risk_tomorrow: "sensor.vigia_fire_risk_tomorrow",
       alert_level: "sensor.vigia_alert_level", fires_nearby: "sensor.vigia_fires_nearby", ...c,
     };
@@ -1052,20 +1056,41 @@ class CorujeiraHootCard extends HTMLElement {
         li .ic { flex:none; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-top:-1px; }
         li .ic svg { width:15px; height:15px; }
         li b { font-weight:700; }
+        ha-card.compact { padding:10px 12px 10px 8px; }
+        .compact .wrap { align-items:center; gap:6px; }
+        .compact .who { width:52px; }
+        .compact .owl, .compact .cat { width:44px; height:51px; }
+        .compact .name { font-size:11px; }
+        .compact .sub, .compact .hello, .compact .more { display:none; }
+        .compact .bubble { margin-top:0; padding:8px 10px; }
+        .compact .bubble::before { top:calc(50% - 6px); }
+        .compact ul { flex-direction:row; flex-wrap:wrap; gap:6px; }
+        .compact li { align-items:center; gap:5px; padding:3px 10px 3px 4px; border-radius:999px; font-size:13.5px; font-weight:700; line-height:1.3; white-space:nowrap; }
+        .compact li .ic { width:20px; height:20px; margin:0; }
+        .compact li.quiet { font-weight:400; color:var(--secondary-text-color); padding-left:4px; }
+        ha-card.tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
         .more { margin-top:6px; background:none; border:none; padding:0; font:inherit; font-size:12px; color:var(--secondary-text-color); cursor:pointer; }
       </style>
-      <ha-card>
+      <ha-card class="${this._c.compact ? "compact" : ""}">
         <div class="wrap">
           <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div></div>
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
         </div>
       </ha-card>`;
     const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who");
+    const go = () => {
+      history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    };
     w.classList.add("link");
+    if (nav && this._c.compact) {
+      const card = this.shadowRoot.querySelector("ha-card");
+      card.classList.add("tap");
+      this.shadowRoot.querySelector(".bubble").addEventListener("click", go);
+    }
     w.addEventListener("click", () => {
       if (nav) {
-        history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
-        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        go();
       } else if (this._c.swap) {
         this._who = this._who === "hoot" ? "nimbu" : "hoot";
         try { localStorage.setItem("corujeira-land:speaker", this._who); } catch (e) { /* storage blocked */ }
@@ -1104,7 +1129,7 @@ class CorujeiraHootCard extends HTMLElement {
       const where = `${km}${a.direction ? " " + a.direction : ""}${a.upwind ? ", upwind" : ""}`;
       const what = al.state === "close" ? "Fill the buckets, keep the hoses ready, and have the go-bag by the car."
         : al.state === "upwind" ? "Smoke may reach us. Close the yurt, keep an eye on the sky and the Vigia map." : "Vigia is watching it.";
-      out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}` });
+      out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}`, tag: `Fire ${km}${a.direction ? " " + a.direction : ""}` });
     } else {
       const n = num(c.fires_nearby);
       if (n) {
@@ -1116,7 +1141,8 @@ class CorujeiraHootCard extends HTMLElement {
         let text = `${bits.join(" and ")} within ${R} km.`;
         text = text[0].toUpperCase() + text.slice(1);
         out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
-          : `${text} None reported to civil protection yet. Vigia is watching.` });
+          : `${text} None reported to civil protection yet. Vigia is watching.`,
+          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots` });
       }
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
@@ -1124,13 +1150,15 @@ class CorujeiraHootCard extends HTMLElement {
       const day = (r0 || 0) >= top ? "today" : "tomorrow";
       out.push({ pri: top >= 4 ? 1 : 2, kind: "fire", text: top >= 4
         ? `Fire risk ${RISK[top]} ${day}: no burning and no sparks outdoors (grinders, chainsaws, mowing dry grass). Keep the hose ready.`
-        : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.` });
+        : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.`,
+        tag: `Fire risk ${RISK[top]}${day === "tomorrow" ? " tomorrow" : ""}` });
     } else if (c.burn_window && r0 != null && r0 <= 2 && (r1 == null || r1 <= 2)) {
       const m = new Date().getMonth() + 1;
       // Only in the dry months, when a calm day is worth noticing; in winter the risk is nearly always low.
       if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
         ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
-        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass." });
+        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass.",
+        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate" });
     }
     return out;
   }
@@ -1140,11 +1168,17 @@ class CorujeiraHootCard extends HTMLElement {
     const land = this._land, fresh = land && land.ts && Date.now() - land.ts < this._c.stale_hours * 3600e3;
     const weather = fresh ? land.items || [] : [];
     const all = [...this._fire(), ...weather].sort((a, b) => a.pri - b.pri);
-    const max = this._c.max, shown = this._open ? all : all.slice(0, max);
+    const max = this._c.max, shown = this._open || this._c.compact ? all : all.slice(0, max);
     const sp = SPEAKERS[this._who] || SPEAKERS.hoot, hi = sp.hi(new Date().getHours());
     const hello = this.shadowRoot.querySelector(".hello");
     hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : `${hi} ${sp.quiet}`;
-    this.shadowRoot.querySelector("ul").innerHTML = shown.map(x => {
+    const ul = this.shadowRoot.querySelector("ul");
+    if (this._c.compact) {
+      ul.innerHTML = shown.length ? shown.map(x => {
+        const col = esc(this._colors[x.kind] || this._colors.plant);
+        return `<li style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)" title="${esc(x.text)}"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</li>`;
+      }).join("") : `<li class="quiet">${esc(!land ? sp.wait : sp.quiet)}</li>`;
+    } else ul.innerHTML = shown.map(x => {
       const col = this._colors[x.kind] || this._colors.plant;
       return `<li><span class="ic" style="color:${esc(col)};background:color-mix(in srgb, ${esc(col)} 13%, transparent)">${icon(x.kind)}</span><span>${lead(x.text)}</span></li>`;
     }).join("");
@@ -1169,7 +1203,9 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    scrubbing. At WIDE_MIN px and wider the two charts sit side by side under the summary and advice.
    Options: show_models (legend of models, default true), navigate (title opens e.g. "#weather"),
    advice (land advice lines under the summary, default true; the advice is published either way as the
-   window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text }] } for the Hoot card). The tablet's browser fetches the data directly (nothing runs in
+   window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text, tag }] } for the Hoot card;
+   tag is a two-word keyword such as "Frost Thu"), hidden (fetch and publish the advice but draw nothing,
+   for a screen that shows the forecast only in a pop-up). The tablet's browser fetches the data directly (nothing runs in
    Home Assistant) and keeps the last forecast for when the internet is off. Remove this resource to revert. */
 (() => {
 const MODELS = [
@@ -1255,10 +1291,19 @@ class CorujeiraMeteogramCard extends HTMLElement {
     this._days = [3, 5, 7].includes(pref) ? pref : this._c.days;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._build();
+    this._visible();
     if (this._s) this._render();
   }
-  getCardSize() { return 8; }
+  getCardSize() { return this._c && this._c.hidden ? 0 : 8; }
   getGridOptions() { return { columns: 12, rows: "auto" }; }
+  // hidden: true keeps the forecast and advice running for the Hoot card without drawing anything
+  // (the dashboard drops the empty slot the same way it does for a conditional card)
+  _visible() {
+    const hide = !!(this._c && this._c.hidden);
+    if (this.hidden === hide && this._told) return;
+    this.hidden = hide; this._told = true;
+    this.dispatchEvent(new CustomEvent("card-visibility-changed", { detail: { value: !hide }, bubbles: true, composed: true }));
+  }
 
   set hass(h) {
     this._hass = h;
@@ -1273,6 +1318,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (!this._timer && this.isConnected) this._timer = setInterval(() => this._maybeFetch(), 5 * 60e3);
   }
   connectedCallback() {
+    this._told = false; this._visible();
     if (!this._ro) {
       this._ro = new ResizeObserver(() => {
         const w = Math.round(this.shadowRoot.querySelector(".plot").clientWidth);
@@ -1506,8 +1552,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".pills button").forEach(b => b.classList.toggle("on", b.textContent === this._days + " days"));
     const s = this._s, plot = this.shadowRoot.querySelector(".plot");
     if (!s) return;
+    if (this._c.hidden) { this._renderAdvice(); return; }
     const W = this._w || plot.clientWidth;
-    if (!W) return;
+    if (!W) { this._renderAdvice(); return; }
     const hours = Math.min(s.n, this._days * 24), days = Math.ceil(hours / 24);
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     // wide: temperature and rain/wind side by side, info in two columns above; otherwise one stacked chart
@@ -1535,7 +1582,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
   _renderAdvice() {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
-    if (this._s) publishLand(adv.map(({ pri, kind, text }) => ({ pri, kind, text })));
+    if (this._s) publishLand(adv.map(({ pri, kind, text, tag }) => ({ pri, kind, text, tag })));
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
       `<div class="tipline"><ha-icon icon="mdi:sprout-outline"></ha-icon><span>${esc(x.text)}</span></div>`).join("");
   }
@@ -1728,7 +1775,10 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const name = d => d.date === iso(today) ? "today" : d.date === iso(tom) ? "tomorrow"
       : new Date(d.date + "T12:00:00").toLocaleDateString(lang, { weekday: "long" });
     const span = (a, b) => a === b ? name(days[a]) : `${name(days[a])} to ${name(days[b])}`;
-    const r = Math.round, out = [], add = (pri, at, text, kind) => out.push({ pri, at, text, kind });
+    // short day for the keyword tags: today, tomorrow, then Wed, Thu…
+    const sday = i => { const n = name(days[i]); return n === "today" || n === "tomorrow" ? n
+      : new Date(days[i].date + "T12:00:00").toLocaleDateString(lang, { weekday: "short" }); };
+    const r = Math.round, out = [], add = (pri, at, text, kind, tag) => out.push({ pri, at, text, kind, tag });
     const runs = test => {
       const res = [];
       days.forEach((d, i) => {
@@ -1746,18 +1796,18 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (fi >= 0) {
       const l = r(days[fi].low);
       add(1, fi, l <= 0 ? `Frost likely early ${name(days[fi])} (${l}°): cover seedlings and bring tender pots in.`
-        : `Near frost early ${name(days[fi])} (${l}°): fleece the seedlings.`, "frost");
+        : `Near frost early ${name(days[fi])} (${l}°): fleece the seedlings.`, "frost", `Frost ${sday(fi)}`);
     }
     const heavy = runs(d => wet(d) && d.amt >= LAND.heavyRain);
     if (heavy.length) {
       // reported amount = expected total (amount × share of models), the same figure the summary uses
       const h = heavy[0], mm = r(days.slice(h.a, h.b + 1).reduce((t, d) => t + d.amt * d.p, 0)), month = today.getMonth() + 1;
-      add(1, h.a, `Heavy rain ${span(h.a, h.b)} (about ${mm} mm): ${month >= 9 && month <= 11 ? "clear the gutters, " : ""}tarp timber and tools, cover the compost.`, "rain");
+      add(1, h.a, `Heavy rain ${span(h.a, h.b)} (about ${mm} mm): ${month >= 9 && month <= 11 ? "clear the gutters, " : ""}tarp timber and tools, cover the compost.`, "rain", `Heavy rain ${sday(h.a)}`);
     }
     const gale = runs(d => d.gust != null && d.gust >= LAND.gale);
-    if (gale.length) add(1, gale[0].a, `Strong gusts ${span(gale[0].a, gale[0].b)} (to ${peak(gale[0], "gust")} km/h): tie down tarps, the yurt cover and anything loose.`, "wind");
+    if (gale.length) add(1, gale[0].a, `Strong gusts ${span(gale[0].a, gale[0].b)} (to ${peak(gale[0], "gust")} km/h): tie down tarps, the yurt cover and anything loose.`, "wind", `Gusts ${sday(gale[0].a)}`);
     const hot = runs(d => d.high != null && d.high >= LAND.hot);
-    if (hot.length) add(1, hot[0].a, `Hot ${span(hot[0].a, hot[0].b)} (up to ${peak(hot[0], "high")}°): water early in the morning and shade young plants.`, "heat");
+    if (hot.length) add(1, hot[0].a, `Hot ${span(hot[0].a, hot[0].b)} (up to ${peak(hot[0], "high")}°): water early in the morning and shade young plants.`, "heat", `Hot ${sday(hot[0].a)}`);
 
     // pump: the creek runs muddy in and after heavy rain, so pump before rain or once the creek runs clear.
     // With a silo level sensor (option silo: sensor entity in %, silo_low default 40) a low silo gets its own line.
@@ -1766,11 +1816,11 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const rainSoon = days.findIndex((d, i) => i <= 2 && wet(d) && d.amt * d.p >= LAND.rainDue);
     if (silo != null && silo < this._c.silo_low) {
       const lvl = `Silo at ${r(silo)}%`;
-      if (rainSoon === 0) add(1, 0, `${lvl} and rain today: hold the pump until the creek runs clear, then top up.`, "water");
-      else if (rainSoon > 0) add(1, 0, `${lvl} with rain due ${name(days[rainSoon])}: pump before then, or wait until the creek runs clear after.`, "water");
-      else add(2, 0, `${lvl}: run the pump once you've checked the creek is running clear.`, "water");
+      if (rainSoon === 0) add(1, 0, `${lvl} and rain today: hold the pump until the creek runs clear, then top up.`, "water", lvl);
+      else if (rainSoon > 0) add(1, 0, `${lvl} with rain due ${name(days[rainSoon])}: pump before then, or wait until the creek runs clear after.`, "water", lvl);
+      else add(2, 0, `${lvl}: run the pump once you've checked the creek is running clear.`, "water", lvl);
     } else if (heavy.length) {
-      add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water");
+      add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water", `Pump off ${sday(heavy[0].a)}`);
     }
 
     // power: two or more dull days in a row, or else a bright stretch worth using
@@ -1781,10 +1831,10 @@ class CorujeiraMeteogramCard extends HTMLElement {
         const u = dull[0], next = days.findIndex((d, i) => i > u.b && d.sun != null && d.sun >= best * 0.7);
         const tip = u.a > 0 ? `run the pump and power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}`
           : next >= 0 ? `save pumping and power tools for ${name(days[next])}` : "keep big loads to a minimum";
-        add(2, u.a, `Little sun ${span(u.a, u.b)}: go easy on the battery, ${tip}.`, "power");
+        add(2, u.a, `Little sun ${span(u.a, u.b)}: go easy on the battery, ${tip}.`, "power", `Low sun ${sday(u.a)}`);
       } else if (best >= LAND.brightMin) {
         const br = runs(d => d.sun != null && d.sun >= best * LAND.brightFrac).filter(x => x.b > x.a);
-        if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power");
+        if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power", `Bright ${sday(br[0].a)}`);
       }
     }
 
@@ -1793,18 +1843,18 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (dry.length && dry[0].a <= 2) {
       const d0 = dry[0], scorching = days.slice(d0.a, d0.b + 1).some(d => d.high >= 28);
       add(2, d0.a, hot.length ? `Dry ${span(d0.a, d0.b)}: mulch bare soil and keep the silo topped up.`
-        : `Dry and warm ${span(d0.a, d0.b)}: water seedlings in the ${scorching ? "early morning" : "evening"} and mulch bare soil.`, "plant");
+        : `Dry and warm ${span(d0.a, d0.b)}: water seedlings in the ${scorching ? "early morning" : "evening"} and mulch bare soil.`, "plant", "Dry spell");
     }
     if (!heavy.length) {
       const ri = days.findIndex((d, i) => i <= 2 && wet(d) && d.amt * d.p >= LAND.rainDue);
-      if (ri >= 0) add(3, ri, `Rain due ${name(days[ri])} (about ${r(days[ri].amt * days[ri].p)} mm): hold off watering.`, "rain");
+      if (ri >= 0) add(3, ri, `Rain due ${name(days[ri])} (about ${r(days[ri].amt * days[ri].p)} mm): hold off watering.`, "rain", `Rain ${sday(ri)}`);
     }
 
     // soil: a mild, dry day straight after rain is a planting window
     for (let i = 1; i < days.length; i++) {
       const prev = days[i - 1], d = days[i];
       if (wet(prev) && d.p < 0.3 && d.high != null && d.high >= 12 && d.high <= 24 && d.low != null && d.low >= 5) {
-        add(3, i, `Moist soil after ${name(prev)}'s rain: ${name(d)} is a good day to plant out or sow.`, "plant");
+        add(3, i, `Moist soil after ${name(prev)}'s rain: ${name(d)} is a good day to plant out or sow.`, "plant", `Plant ${sday(i)}`);
         break;
       }
     }
@@ -1840,19 +1890,19 @@ class CorujeiraMeteogramCard extends HTMLElement {
       for (const e of [...soaked].reverse()) {
         const w = windowIn(e, LAND.forageFrom, LAND.forageTo);
         if (!w) continue;
-        add(2, w.a, `Foraging ${span(w.a, w.b)}, a week or two after ${rainLabel(e)}: porcini and chanterelles under oak and chestnut, parasols in clearings, saffron milk caps under pine. Pick only what you know for certain.`, "mushroom");
+        add(2, w.a, `Foraging ${span(w.a, w.b)}, a week or two after ${rainLabel(e)}: porcini and chanterelles under oak and chestnut, parasols in clearings, saffron milk caps under pine. Pick only what you know for certain.`, "mushroom", w.a === 0 ? "Foraging" : `Foraging ${sday(w.a)}`);
         done = true;
         break;
       }
       const ahead = soaked.find(e => e.start >= 0 && e.end + LAND.forageFrom > days.length - 1);
-      if (!done && ahead) add(3, ahead.start, `${rainLabel(ahead).replace(/^./, c => c.toUpperCase())} (about ${r(ahead.mm)} mm) should bring woodland mushrooms up from around ${when(ahead.end + LAND.forageFrom)}.`, "mushroom");
+      if (!done && ahead) add(3, ahead.start, `${rainLabel(ahead).replace(/^./, c => c.toUpperCase())} (about ${r(ahead.mm)} mm) should bring woodland mushrooms up from around ${when(ahead.end + LAND.forageFrom)}.`, "mushroom", "Mushrooms soon");
     }
     // shiitake logs (open air, rain-fed): expect fruiting a few days after a decent rain
     for (const e of [...soaks].reverse()) {
       if (e.mm < LAND.logRain) continue;
       const w = windowIn(e, LAND.farmFrom, LAND.farmTo);
       if (!w) continue;
-      add(2, w.a, `Shiitake logs: likely fruiting ${span(w.a, w.b)}, a few days after ${rainLabel(e)}. Pick while the caps are still curled under.`, "mushroom");
+      add(2, w.a, `Shiitake logs: likely fruiting ${span(w.a, w.b)}, a few days after ${rainLabel(e)}. Pick while the caps are still curled under.`, "mushroom", w.a === 0 ? "Shiitake" : `Shiitake ${sday(w.a)}`);
       break;
     }
     return out.sort((x, y) => x.pri - y.pri || x.at - y.at);
@@ -1989,19 +2039,26 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
      - drops every card or sub-button whose entity or pop-up hash is in `hide` (at any depth; visibility
        conditions are left alone),
      - sets read_only: true on every corujeira-silo-card when `read_only` is on (pump and creek as status only),
-     - merges `set` into cards (not pop-ups) by entity (e.g. to widen a tile left alone in its row),
+     - merges `set` into cards by entity or by card type (e.g. to widen a tile left alone in its row, or to
+       make the Hoot card compact); pop-ups and the cards inside them are left as they are,
      - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
      - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
        Each column lists source section indices (0-based, in the source view); their cards are joined in
        that order into one single-width section. Sections not listed follow at the end unchanged. On a
-       narrow screen HA stacks the columns in order, so column 1 comes first.
+       narrow screen HA stacks the columns in order, so column 1 comes first,
+     - passes `kiosk_mode` through for the kiosk-mode plugin (e.g. hide_header: true),
+     - with `fit: true`, shrinks the view while it is open so it always fits the screen height without
+       scrolling (CSS zoom on the sections view, layout width kept, centred; never below `fit_min`, 0.6).
    Dashboard config:
      strategy:
        type: custom:corujeira-mirror
        source: corujeira-bubble          (url_path of the dashboard to mirror; required)
        hide: [light.outdoor_lantern_7, "#clayhouse"]
        read_only: true                   (default true)
-       set: { light.yurt_pendant_lamps: { grid_options: { columns: 12, rows: 2 } } }
+       set: { light.yurt_pendant_lamps: { grid_options: { columns: 12, rows: 2 } },
+              "custom:corujeira-hoot-card": { compact: true, navigate: "#nimbu" } }
+       kiosk_mode: { hide_header: true }
+       fit: true
        layout:                           (optional)
          view: home                      (view path; default the first view)
          columns: [[0, 2], [3, 4, 1], [5, 6]]
@@ -2010,6 +2067,57 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
 (() => {
 const errorView = text => ({ views: [{ title: "Mirror", type: "sections", sections: [{ type: "grid", cards: [
   { type: "markdown", content: `**corujeira-mirror:** ${text}` }] }] }] });
+
+// Fit to screen: find the open dashboard's sections view and zoom it so its bottom sits at the bottom of the
+// window. The layout width is pinned first, so the cards lay out exactly as they would unzoomed and one
+// measurement gives the right zoom. Re-checked every second and on resize (charts load late, advice changes).
+const fitter = {
+  paths: new Map(), el: null, timer: null,
+  watch(path, min) {
+    this.paths.set(path, Math.max(0.3, Math.min(1, +min || 0.6)));
+    if (!this.timer) {
+      this.timer = setInterval(() => this.tick(), 1000);
+      window.addEventListener("resize", () => { this.reset(); this.tick(); });
+      window.addEventListener("location-changed", () => setTimeout(() => this.tick(), 50));
+    }
+    setTimeout(() => this.tick(), 50);
+  },
+  // shadow-piercing search for the first element with this tag, below a root
+  find(root, tag, depth = 0) {
+    if (!root || depth > 14) return null;
+    const kids = [...(root.children || [])];
+    if (root.shadowRoot) kids.unshift(...root.shadowRoot.children);
+    for (const k of kids) {
+      if (k.localName === tag) return k;
+      const f = this.find(k, tag, depth + 1);
+      if (f) return f;
+    }
+    return null;
+  },
+  reset() { if (this.el) { const st = this.el.style; st.zoom = st.width = st.marginLeft = st.boxSizing = ""; } },
+  tick() {
+    const path = location.pathname.split("/")[1], min = this.paths.get(path);
+    if (min == null || document.hidden) return;
+    if (!this.el || !this.el.isConnected) {
+      const ha = document.querySelector("home-assistant");
+      const panel = this.find(ha, "ha-panel-lovelace");
+      this.el = panel && this.find(panel, "hui-sections-view");
+      if (!this.el) return;
+    }
+    const v = this.el, host = v.parentNode && (v.parentNode.host || v.parentNode);
+    if (!host || !host.getBoundingClientRect) return;
+    const W = host.getBoundingClientRect().width, r = v.getBoundingClientRect();
+    const avail = window.innerHeight - Math.max(0, r.top);
+    if (!W || !r.height || avail < 240) return;
+    const z0 = parseFloat(v.style.zoom) || 1;
+    const z = Math.min(1, Math.max(min, Math.floor(z0 * avail / r.height * 1000) / 1000));
+    if (Math.abs(z - z0) < 0.004 && (z === 1 || v.style.width)) return;
+    v.style.zoom = z === 1 ? "" : String(z);
+    v.style.width = z === 1 ? "" : `${W}px`;
+    v.style.boxSizing = z === 1 ? "" : "border-box";
+    v.style.marginLeft = z === 1 ? "" : `${W * (1 - z) / (2 * z)}px`;
+  },
+};
 
 class CorujeiraMirrorStrategy extends HTMLElement {
   static async generate(c, hass) {
@@ -2028,14 +2136,14 @@ class CorujeiraMirrorStrategy extends HTMLElement {
 
     const hidden = o => o && typeof o === "object" && !Array.isArray(o) && !("condition" in o) &&
       (hide.has(o.entity) || hide.has(o.hash));
-    const walk = o => {
-      if (Array.isArray(o)) return o.filter(x => !hidden(x)).map(walk);
+    const walk = (o, inPop) => {
+      if (Array.isArray(o)) return o.filter(x => !hidden(x)).map(x => walk(x, inPop));
       if (o && typeof o === "object") {
-        const out = {};
-        for (const [k, v] of Object.entries(o)) out[k] = walk(v);
-        if (out.type && !("condition" in out) && out.card_type !== "pop-up") {
-          const extra = set[out.entity];
-          if (extra) Object.assign(out, extra);
+        const pop = inPop || o.card_type === "pop-up", out = {};
+        for (const [k, v] of Object.entries(o)) out[k] = walk(v, pop);
+        if (out.type && !("condition" in out) && !pop) {
+          if (set[out.entity]) Object.assign(out, set[out.entity]);
+          if (set[out.type]) Object.assign(out, set[out.type]);
         }
         if (readOnly && out.type === "custom:corujeira-silo-card") out.read_only = true;
         return out;
@@ -2043,7 +2151,9 @@ class CorujeiraMirrorStrategy extends HTMLElement {
       if (typeof o === "string" && to && o.includes(from)) return o.split(from).join(to);
       return o;
     };
-    const out = walk(cfg);
+    const out = walk(cfg, false);
+    if (c.kiosk_mode) out.kiosk_mode = c.kiosk_mode;
+    if (c.fit && here) fitter.watch(here, c.fit_min);
     const lay = c.layout;
     if (lay && Array.isArray(lay.columns) && lay.columns.length) {
       const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];

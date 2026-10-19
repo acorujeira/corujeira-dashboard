@@ -6,7 +6,7 @@ Custom Lovelace cards for the A Corujeira Home Assistant dashboard. Installed vi
 
 - `cards/corujeira-*-card.js`: one file per card (flow, span, forecast, meteogram, hoot, silo, fire, air). Each card's options are documented in its header comment.
 - `dist/corujeira-dashboard.js`: the built bundle HACS serves.
-- `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Its `layout` option regroups the main view into three columns for the landscape kitchen tablet (column 1 header, fire, Hoot, weather; column 2 energy, light zones; column 3 water, air). Change the main dashboard, not the kitchen one.
+- `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Its `layout` option regroups the main view into three columns for the landscape kitchen tablet (column 1 header, fire, compact Nimbu, light zones, weather now; column 2 energy; column 3 water, air). `set` by card type makes Hoot compact (tap opens the `#nimbu` pop-up on the main dashboard) and runs the meteogram hidden (forecast in the `#weather` pop-up). `kiosk_mode` passes through to the kiosk-mode plugin (hides the header) and `fit: true` zooms the view so it never scrolls. Change the main dashboard, not the kitchen one.
 - `assets/`: standalone animated SVGs (`hoot.svg`, `nimbu.svg`).
 - The fire card is no longer on the dashboard (the ha-vigia integration replaced it).
 
@@ -35,6 +35,8 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - Fire lines come from Vigia sensors in Hoot's `_fire`: active alert, risk high or above (today or tomorrow), nearby fires (reported incidents and satellite heat spots named separately, from the `incidents` and `heat_spots` attributes of `sensor.vigia_fires_nearby`), and a calm-day line May to Oct, worded for low or moderate risk (`burn_window: false` turns it off).
 - Fire line tone: practical, not over-conservative. The land doesn't burn pruning piles, so no burning or burn-registration advice. The low-risk line suggests grinding, welding, chainsaw work, or a fire in the sauna or fire pit.
 - New weather rules go in the meteogram's `_advice`; new fire rules go in Hoot's `_fire`.
+- Each advice line can carry a `tag` (two-word keyword such as "Frost Thu", "Foraging", "Heat spot") for Hoot's `compact` mode, which shows colour-coded keyword chips instead of sentences. Add a tag to every new rule.
+- Meteogram `hidden: true` fetches and publishes advice without drawing (the card hides its slot via `card-visibility-changed`).
 - Meteogram low-silo line (`silo`, `silo_low` default 40%) is off on the dashboard. Scale: 100% = 5,000 L.
 
 ### Silo
