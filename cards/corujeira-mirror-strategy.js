@@ -4,8 +4,9 @@
      - drops every card or sub-button whose entity or pop-up hash is in `hide` (at any depth; visibility
        conditions are left alone),
      - sets read_only: true on every corujeira-silo-card when `read_only` is on (pump and creek as status only),
-     - merges `set` into cards by entity or by card type (e.g. to widen a tile left alone in its row, or to
-       make the Hoot card compact); pop-ups and the cards inside them are left as they are,
+     - merges `set` into cards by entity, by card type, or by "name:<card name>" (e.g. to widen a tile left
+       alone in its row, make the Hoot card compact, or drop the header's sub-buttons); pop-ups and the cards
+       inside them are left as they are,
      - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
      - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
        Each column lists source section indices (0-based, in the source view); their cards are joined in
@@ -158,6 +159,7 @@ class CorujeiraMirrorStrategy extends HTMLElement {
         if (out.type && !("condition" in out) && !pop) {
           if (set[out.entity]) Object.assign(out, set[out.entity]);
           if (set[out.type]) Object.assign(out, set[out.type]);
+          if (out.name && set[`name:${out.name}`]) Object.assign(out, set[`name:${out.name}`]);
         }
         if (readOnly && out.type === "custom:corujeira-silo-card") out.read_only = true;
         return out;

@@ -11,7 +11,8 @@
    navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
    compact (a short greeting, then one colour-coded keyword chip per line with a few words of detail, e.g.
    "Foraging  porcini and chanterelles"; details: false leaves the chips alone; with navigate set, tapping
-   anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card),
+   the bubble opens the full advice, e.g. a pop-up holding a full Hoot card; tapping the speaker opens it
+   too, unless swap: true is set, which keeps the Hoot/Nimbu swap on the speaker),
    nearest_fire (sensor with distance and direction for the heat spot detail, default Vigia's).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
@@ -229,7 +230,7 @@ class CorujeiraHootCard extends HTMLElement {
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
         </div>
       </ha-card>`;
-    const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who");
+    const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who"), c = this._c;
     const go = () => {
       history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
       window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
@@ -241,7 +242,8 @@ class CorujeiraHootCard extends HTMLElement {
       this.shadowRoot.querySelector(".bubble").addEventListener("click", go);
     }
     w.addEventListener("click", () => {
-      if (nav) {
+      // compact with a pop-up: the bubble opens the pop-up, the speaker still swaps when swap is set
+      if (nav && !(this._c.compact && c.swap === true)) {
         go();
       } else if (this._c.swap) {
         this._who = this._who === "hoot" ? "nimbu" : "hoot";

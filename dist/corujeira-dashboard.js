@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.15.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.16.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.15.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.16.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -875,7 +875,8 @@ if (!window.customCards.find(c => c.type === "corujeira-forecast-card"))
    navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
    compact (a short greeting, then one colour-coded keyword chip per line with a few words of detail, e.g.
    "Foraging  porcini and chanterelles"; details: false leaves the chips alone; with navigate set, tapping
-   anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card),
+   the bubble opens the full advice, e.g. a pop-up holding a full Hoot card; tapping the speaker opens it
+   too, unless swap: true is set, which keeps the Hoot/Nimbu swap on the speaker),
    nearest_fire (sensor with distance and direction for the heat spot detail, default Vigia's).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
@@ -1093,7 +1094,7 @@ class CorujeiraHootCard extends HTMLElement {
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
         </div>
       </ha-card>`;
-    const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who");
+    const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who"), c = this._c;
     const go = () => {
       history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
       window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
@@ -1105,7 +1106,8 @@ class CorujeiraHootCard extends HTMLElement {
       this.shadowRoot.querySelector(".bubble").addEventListener("click", go);
     }
     w.addEventListener("click", () => {
-      if (nav) {
+      // compact with a pop-up: the bubble opens the pop-up, the speaker still swaps when swap is set
+      if (nav && !(this._c.compact && c.swap === true)) {
         go();
       } else if (this._c.swap) {
         this._who = this._who === "hoot" ? "nimbu" : "hoot";
@@ -2142,8 +2144,9 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
      - drops every card or sub-button whose entity or pop-up hash is in `hide` (at any depth; visibility
        conditions are left alone),
      - sets read_only: true on every corujeira-silo-card when `read_only` is on (pump and creek as status only),
-     - merges `set` into cards by entity or by card type (e.g. to widen a tile left alone in its row, or to
-       make the Hoot card compact); pop-ups and the cards inside them are left as they are,
+     - merges `set` into cards by entity, by card type, or by "name:<card name>" (e.g. to widen a tile left
+       alone in its row, make the Hoot card compact, or drop the header's sub-buttons); pop-ups and the cards
+       inside them are left as they are,
      - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
      - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
        Each column lists source section indices (0-based, in the source view); their cards are joined in
@@ -2296,6 +2299,7 @@ class CorujeiraMirrorStrategy extends HTMLElement {
         if (out.type && !("condition" in out) && !pop) {
           if (set[out.entity]) Object.assign(out, set[out.entity]);
           if (set[out.type]) Object.assign(out, set[out.type]);
+          if (out.name && set[`name:${out.name}`]) Object.assign(out, set[`name:${out.name}`]);
         }
         if (readOnly && out.type === "custom:corujeira-silo-card") out.read_only = true;
         return out;
