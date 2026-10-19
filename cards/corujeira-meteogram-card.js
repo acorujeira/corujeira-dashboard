@@ -9,7 +9,7 @@
    advice (land advice lines under the summary, default true; the advice is published either way as the
    window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text, tag }] } for the Hoot card;
    tag is a two-word keyword such as "Frost Thu"), hidden (fetch and publish the advice but draw nothing,
-   for a screen that shows the forecast only in a pop-up), chart_height (height of each chart panel in px,
+   for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
    of the next five days; with navigate set, tapping anywhere opens it, e.g. the full meteogram pop-up). The tablet's browser fetches the data directly (nothing runs in
@@ -30,7 +30,7 @@ const MODELS = [
 ];
 const API = "https://api.open-meteo.com/v1/forecast";
 const DAY_TOP = 32, T_H0 = 200, TICK_H = 18, GAP = 12, P_H0 = 110, LEFT = 34, RIGHT = 34;
-const WIDE_MIN = 820, PANE_GAP = 18; // card width at which the two charts sit side by side
+const WIDE_MIN = 820, PANE_GAP = 18, WIDE_T_H = 300; // card width at which the two charts sit side by side
 const RAIN_MIN = 0.1;          // mm/h that counts as raining in an hour
 const WET_DAY = 1;             // mm in a day that counts as a wet day for one model
 const WINDY = 50;              // km/h gust (median of models' daily max) worth a mention in the summary
@@ -400,6 +400,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     // wide: temperature and rain/wind side by side, info in two columns above; otherwise one stacked chart
     const wide = W >= WIDE_MIN;
+    this._wideNow = wide;
     this.shadowRoot.querySelector("ha-card").classList.toggle("wide", wide);
     if (wide) {
       const pw = Math.floor((W - PANE_GAP) / 2);
@@ -474,7 +475,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const plotW = W - LEFT - right, dayW = plotW / days, narrow = dayW < 64;
     const hx = i => LEFT + i / hours * plotW;
     let tTop = null, tBot = null, pTop = null, pBot = null;
-    const T_H = this._c.chart_height || T_H0, P_H = Math.round(T_H * P_H0 / T_H0);
+    const T_H = (this._wideNow && this._c.wide_chart_height) || this._c.chart_height || (this._wideNow ? WIDE_T_H : T_H0), P_H = Math.round(T_H * P_H0 / T_H0);
     if (showT) { tTop = DAY_TOP; tBot = tTop + T_H; }
     if (showR) { pTop = showT ? tBot + TICK_H + GAP : DAY_TOP; pBot = pTop + (showT ? P_H : T_H); }
     const rowTop = showR ? (showT ? pBot : pBot + TICK_H) : tBot + TICK_H;
