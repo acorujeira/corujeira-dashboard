@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.9.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.10.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.9.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.10.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1990,7 +1990,11 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
        conditions are left alone),
      - sets read_only: true on every corujeira-silo-card when `read_only` is on (pump and creek as status only),
      - merges `set` into cards (not pop-ups) by entity (e.g. to widen a tile left alone in its row),
-     - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here.
+     - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
+     - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
+       Each column lists source section indices (0-based, in the source view); their cards are joined in
+       that order into one single-width section. Sections not listed follow at the end unchanged. On a
+       narrow screen HA stacks the columns in order, so column 1 comes first.
    Dashboard config:
      strategy:
        type: custom:corujeira-mirror
@@ -1998,6 +2002,10 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
        hide: [light.outdoor_lantern_7, "#clayhouse"]
        read_only: true                   (default true)
        set: { light.yurt_pendant_lamps: { grid_options: { columns: 12, rows: 2 } } }
+       layout:                           (optional)
+         view: home                      (view path; default the first view)
+         columns: [[0, 2], [3, 4, 1], [5, 6]]
+         max_columns: 3                  (default the number of columns)
    The dashboard can't be edited in the UI; edit the source instead. Remove this resource to revert. */
 (() => {
 const errorView = text => ({ views: [{ title: "Mirror", type: "sections", sections: [{ type: "grid", cards: [
@@ -2035,7 +2043,26 @@ class CorujeiraMirrorStrategy extends HTMLElement {
       if (typeof o === "string" && to && o.includes(from)) return o.split(from).join(to);
       return o;
     };
-    return walk(cfg);
+    const out = walk(cfg);
+    const lay = c.layout;
+    if (lay && Array.isArray(lay.columns) && lay.columns.length) {
+      const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];
+      if (view && Array.isArray(view.sections)) {
+        const src = view.sections, used = new Set();
+        const cols = lay.columns.map(idx => {
+          const cards = [];
+          for (const i of [].concat(idx)) {
+            if (!src[i] || used.has(i)) continue;
+            used.add(i);
+            cards.push(...(src[i].cards || []));
+          }
+          return { type: "grid", cards };
+        }).filter(sec => sec.cards.length);
+        view.sections = [...cols, ...src.filter((_, i) => !used.has(i))];
+        view.max_columns = lay.max_columns || cols.length;
+      }
+    }
+    return out;
   }
 }
 if (!customElements.get("ll-strategy-dashboard-corujeira-mirror"))

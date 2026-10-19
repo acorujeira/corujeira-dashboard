@@ -6,7 +6,7 @@ Custom Lovelace cards for the A Corujeira Home Assistant dashboard. Installed vi
 
 - `cards/corujeira-*-card.js`: one file per card (flow, span, forecast, meteogram, hoot, silo, fire, air). Each card's options are documented in its header comment.
 - `dist/corujeira-dashboard.js`: the built bundle HACS serves.
-- `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Change the main dashboard, not the kitchen one.
+- `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Its `layout` option regroups the main view into three columns for the landscape kitchen tablet (column 1 header, fire, Hoot, weather; column 2 energy, light zones; column 3 water, air). Change the main dashboard, not the kitchen one.
 - `assets/`: standalone animated SVGs (`hoot.svg`, `nimbu.svg`).
 - The fire card is no longer on the dashboard (the ha-vigia integration replaced it).
 
