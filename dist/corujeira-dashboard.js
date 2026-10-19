@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.11.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.12.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.11.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.12.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2048,7 +2048,10 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
        narrow screen HA stacks the columns in order, so column 1 comes first,
      - passes `kiosk_mode` through for the kiosk-mode plugin (e.g. hide_header: true),
      - with `fit: true`, shrinks the view while it is open so it always fits the screen height without
-       scrolling (CSS zoom on the sections view, layout width kept, centred; never below `fit_min`, 0.6).
+       scrolling (CSS zoom on the sections view, layout width kept, centred; never below `fit_min`, 0.6),
+     - with `fill: true` as well, shorter columns grow to the tallest one's height: the spare space goes
+       before each group heading (bubble separator) in the column, or between its cards when it has none,
+       so every column ends at the same line. Only while the sections sit side by side.
    Dashboard config:
      strategy:
        type: custom:corujeira-mirror
@@ -2059,6 +2062,7 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
               "custom:corujeira-hoot-card": { compact: true, navigate: "#nimbu" } }
        kiosk_mode: { hide_header: true }
        fit: true
+       fill: true
        layout:                           (optional)
          view: home                      (view path; default the first view)
          columns: [[0, 2], [3, 4, 1], [5, 6]]
@@ -2072,9 +2076,10 @@ const errorView = text => ({ views: [{ title: "Mirror", type: "sections", sectio
 // window. The layout width is pinned first, so the cards lay out exactly as they would unzoomed and one
 // measurement gives the right zoom. Re-checked every second and on resize (charts load late, advice changes).
 const fitter = {
-  paths: new Map(), el: null, timer: null,
-  watch(path, min) {
+  paths: new Map(), fills: new Set(), el: null, timer: null,
+  watch(path, min, fill) {
     this.paths.set(path, Math.max(0.3, Math.min(1, +min || 0.6)));
+    if (fill) this.fills.add(path); else this.fills.delete(path);
     if (!this.timer) {
       this.timer = setInterval(() => this.tick(), 1000);
       window.addEventListener("resize", () => { this.reset(); this.tick(); });
@@ -2094,6 +2099,36 @@ const fitter = {
     }
     return null;
   },
+  // Equal-height columns: work in the view's own (unzoomed) pixels so zoom never feeds back.
+  fill(v, on) {
+    const root = v.shadowRoot;
+    const grid = root && [...root.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");
+    if (!grid) return;
+    const secs = [...grid.children].filter(e => e.offsetHeight > 0);
+    const cols = secs.map(sec => {
+      const gs = this.find(sec, "hui-grid-section");
+      const box = gs && gs.shadowRoot && [...gs.shadowRoot.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");
+      if (!box) return null;
+      const items = [...box.children].filter(e => e.offsetHeight > 0 && getComputedStyle(e).display !== "none");
+      const isSep = el => { const b = this.find(el, "bubble-card"), cfg = b && (b.config || b._config); return !!(cfg && cfg.card_type === "separator"); };
+      let slots = items.slice(1).filter(isSep);
+      if (!slots.length) slots = items.slice(1);
+      const old = +(box.dataset.cjFill || 0);
+      return { sec, box, items, slots, natural: sec.offsetHeight - old * slots.length };
+    }).filter(Boolean);
+    const clear = col => { col.items.forEach(it => { if (it.dataset.cjFill) { it.style.marginTop = ""; delete it.dataset.cjFill; } }); delete col.box.dataset.cjFill; };
+    const sideBySide = cols.length > 1 && new Set(cols.map(c => c.sec.offsetTop)).size === 1;
+    if (!on || !sideBySide) { cols.forEach(clear); return; }
+    const target = Math.max(...cols.map(c => c.natural));
+    for (const col of cols) {
+      const per = col.slots.length ? Math.max(0, (target - col.natural) / col.slots.length) : 0;
+      if (Math.abs(per - +(col.box.dataset.cjFill || 0)) < 0.5) continue;
+      clear(col);
+      if (per < 0.5) continue;
+      col.slots.forEach(it => { it.style.marginTop = `${per}px`; it.dataset.cjFill = "1"; });
+      col.box.dataset.cjFill = String(per);
+    }
+  },
   reset() { if (this.el) { const st = this.el.style; st.zoom = st.width = st.marginLeft = st.boxSizing = ""; } },
   tick() {
     const path = location.pathname.split("/")[1], min = this.paths.get(path);
@@ -2105,6 +2140,7 @@ const fitter = {
       if (!this.el) return;
     }
     const v = this.el, host = v.parentNode && (v.parentNode.host || v.parentNode);
+    try { this.fill(v, this.fills.has(path)); } catch (e) { /* layout internals changed: leave it */ }
     if (!host || !host.getBoundingClientRect) return;
     const W = host.getBoundingClientRect().width, r = v.getBoundingClientRect();
     const avail = window.innerHeight - Math.max(0, r.top);
@@ -2153,7 +2189,7 @@ class CorujeiraMirrorStrategy extends HTMLElement {
     };
     const out = walk(cfg, false);
     if (c.kiosk_mode) out.kiosk_mode = c.kiosk_mode;
-    if (c.fit && here) fitter.watch(here, c.fit_min);
+    if (c.fit && here) fitter.watch(here, c.fit_min, c.fill);
     const lay = c.layout;
     if (lay && Array.isArray(lay.columns) && lay.columns.length) {
       const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];
