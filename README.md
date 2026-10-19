@@ -17,7 +17,7 @@ Custom Lovelace cards for the Home Assistant dashboard at A Corujeira, an off-gr
 
 All eight cards ship as one file, `dist/corujeira-dashboard.js`.
 
-**With HACS:** HACS > three-dot menu > Custom repositories > add `eyeofeska/corujeira-dashboard`, type Dashboard. Download it, then refresh the browser. HACS registers the resource for you, and new releases show up as updates.
+**With HACS:** HACS > three-dot menu > Custom repositories > add `acorujeira/corujeira-dashboard`, type Dashboard. Download it, then refresh the browser. HACS registers the resource for you, and new releases show up as updates.
 
 **By hand:** copy `dist/corujeira-dashboard.js` into `config/www/`, then add it under Settings > Dashboards > Resources as `/local/corujeira-dashboard.js`, type JavaScript module.
 
