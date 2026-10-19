@@ -9,11 +9,13 @@
      - points links to the source's views (e.g. "/corujeira-bubble/air-24h") at the same views here,
      - optionally regroups a view's sections into columns (`layout`), e.g. three columns on a landscape tablet.
        Each column lists source section indices (0-based, in the source view); their cards are joined in
-       that order into one single-width section. Sections not listed follow at the end unchanged. On a
+       that order into one single-width section. An entry can also be { card: "<card type>" } to lift that
+       card out of whichever section holds it and place it there instead (e.g. the fire tile). Sections not listed follow at the end unchanged. On a
        narrow screen HA stacks the columns in order, so column 1 comes first,
      - passes `kiosk_mode` through for the kiosk-mode plugin (e.g. hide_header: true),
-     - with `fit: true`, shrinks the view while it is open so it always fits the screen height without
-       scrolling (CSS zoom on the sections view, layout width kept, centred; never below `fit_min`, 0.6),
+     - with `fit: true`, scales the view while it is open so it fills the screen exactly: no scrolling and
+       no side margins (CSS zoom on the sections view, with the layout widened to match, so the columns get
+       wider and shorter as it shrinks; never below `fit_min`, 0.6),
      - with `fill: true` as well, shorter columns grow to the tallest one's height: the spare space goes
        before each group heading (bubble separator) in the column, or between its cards when it has none,
        so every column ends at the same line. Only while the sections sit side by side.
@@ -115,13 +117,19 @@ const fitter = {
     const W = host.getBoundingClientRect().width, r = v.getBoundingClientRect();
     const avail = window.innerHeight - Math.max(0, r.top);
     if (!W || !r.height || avail < 240) return;
+    // The layout is widened to W / z, so on screen it is exactly W wide. Wider columns can change the
+    // height (text wraps less, some cards scale with width), so step part of the way and settle over ticks.
     const z0 = parseFloat(v.style.zoom) || 1;
-    const z = Math.min(1, Math.max(min, Math.floor(z0 * avail / r.height * 1000) / 1000));
-    if (Math.abs(z - z0) < 0.004 && (z === 1 || v.style.width)) return;
+    let z = Math.min(1, Math.max(min, Math.floor(z0 * Math.pow(avail / r.height, 0.8) * 1000) / 1000));
+    const over = r.height > avail + 0.5;
+    if (Math.abs(z - z0) < 0.004) {
+      if (!over || z0 <= min) { if (z === 1 || v.style.width) return; }
+      else z = Math.max(min, Math.round((z0 - 0.003) * 1000) / 1000); // never leave it a pixel too tall
+    }
     v.style.zoom = z === 1 ? "" : String(z);
-    v.style.width = z === 1 ? "" : `${W}px`;
+    v.style.width = z === 1 ? "" : `${W / z}px`;
     v.style.boxSizing = z === 1 ? "" : "border-box";
-    v.style.marginLeft = z === 1 ? "" : `${W * (1 - z) / (2 * z)}px`;
+    v.style.marginLeft = "";
   },
 };
 
@@ -165,9 +173,18 @@ class CorujeiraMirrorStrategy extends HTMLElement {
       const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];
       if (view && Array.isArray(view.sections)) {
         const src = view.sections, used = new Set();
+        // cards named by type in the layout come out of their own sections first
+        const lifted = {};
+        lay.columns.flat().filter(e => e && typeof e === "object" && e.card).forEach(e => {
+          lifted[e.card] = [];
+          src.forEach(sec => {
+            sec.cards = (sec.cards || []).filter(cd => cd.type === e.card ? (lifted[e.card].push(cd), false) : true);
+          });
+        });
         const cols = lay.columns.map(idx => {
           const cards = [];
           for (const i of [].concat(idx)) {
+            if (i && typeof i === "object") { cards.push(...(lifted[i.card] || [])); continue; }
             if (!src[i] || used.has(i)) continue;
             used.add(i);
             cards.push(...(src[i].cards || []));
