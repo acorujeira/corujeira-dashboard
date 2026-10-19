@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.13.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.14.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.13.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.14.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -873,8 +873,10 @@ if (!window.customCards.find(c => c.type === "corujeira-forecast-card"))
    fire_risk / fire_risk_tomorrow / alert_level / fires_nearby (entity ids, default Vigia's),
    colors (per kind: mushroom, plant, fire, frost, rain, wind, heat, power, water),
    navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
-   compact (one colour-coded keyword chip per line instead of sentences, e.g. "Frost Thu", "Foraging"; with
-   navigate set, tapping anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card).
+   compact (a short greeting, then one colour-coded keyword chip per line with a few words of detail, e.g.
+   "Foraging  porcini and chanterelles"; details: false leaves the chips alone; with navigate set, tapping
+   anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card),
+   nearest_fire (sensor with distance and direction for the heat spot detail, default Vigia's).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
 const KINDS = {
@@ -971,12 +973,20 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const lead = t => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); return m ? `<b>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
 // a keyword for compact mode when a line carries no tag: the lead phrase, cut to three words
 const shortTag = t => String(t).split(/[:.(]/)[0].split(/\s+/).slice(0, 3).join(" ");
+// a few words of detail for compact mode: the line's own detail, or the first clause after its lead phrase
+const detailOf = x => {
+  if (x.detail != null) return x.detail;
+  const m = String(x.text).match(/^(.{4,70}?[:.])\s+(.*)$/s);
+  let r = m ? m[2].split(/[.;]/)[0].trim() : "";
+  if (r.length > 48) { const c = r.split(",")[0]; r = c.length >= 12 && c.length <= 48 ? c : r.slice(0, 46).replace(/\s+\S*$/, "") + "…"; }
+  return r;
+};
 const load = () => { try { return JSON.parse(localStorage.getItem("corujeira-land:advice")); } catch (e) { return null; } };
 
 class CorujeiraHootCard extends HTMLElement {
   setConfig(c) {
     this._c = {
-      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, fire: true, burn_window: true, stale_hours: 18,
+      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, details: true, nearest_fire: "sensor.vigia_nearest_fire", fire: true, burn_window: true, stale_hours: 18,
       fire_risk: "sensor.vigia_fire_risk", fire_risk_tomorrow: "sensor.vigia_fire_risk_tomorrow",
       alert_level: "sensor.vigia_alert_level", fires_nearby: "sensor.vigia_fires_nearby", ...c,
     };
@@ -994,7 +1004,7 @@ class CorujeiraHootCard extends HTMLElement {
   set hass(h) {
     const prev = this._hass;
     this._hass = h;
-    const ids = ["fire_risk", "fire_risk_tomorrow", "alert_level", "fires_nearby"].map(k => this._c[k]);
+    const ids = ["fire_risk", "fire_risk_tomorrow", "alert_level", "fires_nearby", "nearest_fire"].map(k => this._c[k]);
     if (!prev || ids.some(id => prev.states[id] !== h.states[id])) this._render();
   }
   connectedCallback() {
@@ -1061,7 +1071,13 @@ class CorujeiraHootCard extends HTMLElement {
         .compact .who { width:52px; }
         .compact .owl, .compact .cat { width:44px; height:51px; }
         .compact .name { font-size:11px; }
-        .compact .sub, .compact .hello, .compact .more { display:none; }
+        .compact .sub, .compact .more { display:none; }
+        .compact .hello { font-size:13px; color:var(--secondary-text-color); margin-bottom:7px; }
+        .compact.chips-only .hello { display:none; }
+        .compact ul.rows { flex-direction:column; flex-wrap:nowrap; gap:7px; }
+        .compact ul.rows li { display:block; padding:0; border-radius:0; background:none !important; font-weight:400; white-space:normal; line-height:1.5; }
+        .compact ul.rows .tag { display:inline-flex; align-items:center; gap:5px; padding:2px 10px 2px 4px; border-radius:999px; font-size:13.5px; font-weight:700; vertical-align:middle; margin-right:6px; }
+        .compact ul.rows .det { font-size:13px; color:var(--secondary-text-color); vertical-align:middle; }
         .compact .bubble { margin-top:0; padding:8px 10px; }
         .compact .bubble::before { top:calc(50% - 6px); }
         .compact ul { flex-direction:row; flex-wrap:wrap; gap:6px; }
@@ -1071,7 +1087,7 @@ class CorujeiraHootCard extends HTMLElement {
         ha-card.tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
         .more { margin-top:6px; background:none; border:none; padding:0; font:inherit; font-size:12px; color:var(--secondary-text-color); cursor:pointer; }
       </style>
-      <ha-card class="${this._c.compact ? "compact" : ""}">
+      <ha-card class="${this._c.compact ? `compact${this._c.details ? "" : " chips-only"}` : ""}">
         <div class="wrap">
           <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div></div>
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
@@ -1142,7 +1158,12 @@ class CorujeiraHootCard extends HTMLElement {
         text = text[0].toUpperCase() + text.slice(1);
         out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
           : `${text} None reported to civil protection yet. Vigia is watching.`,
-          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots` });
+          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots`,
+          detail: (() => {
+            const nf = st(c.nearest_fire), km = nf ? parseFloat(nf.state) : NaN, na = (nf && nf.attributes) || {};
+            const where = !isNaN(km) ? `nearest ${Math.round(km)} km${na.direction ? " " + na.direction : ""}${na.upwind ? ", upwind" : ""}` : `within ${R} km`;
+            return inc ? where : `${where}, none reported`;
+          })() });
       }
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
@@ -1158,7 +1179,8 @@ class CorujeiraHootCard extends HTMLElement {
       if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
         ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
         : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass.",
-        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate" });
+        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate",
+        detail: r0 <= 1 ? "good for grinding, welding, the sauna" : "fine for the sauna and fire pit" });
     }
     return out;
   }
@@ -1173,7 +1195,14 @@ class CorujeiraHootCard extends HTMLElement {
     const hello = this.shadowRoot.querySelector(".hello");
     hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : `${hi} ${sp.quiet}`;
     const ul = this.shadowRoot.querySelector("ul");
-    if (this._c.compact) {
+    if (this._c.compact && this._c.details) {
+      hello.textContent = !land && !all.length ? sp.wait : all.length ? hi : `${hi} ${sp.quiet}`;
+      ul.className = "rows";
+      ul.innerHTML = shown.map(x => {
+        const col = esc(this._colors[x.kind] || this._colors.plant), d = detailOf(x);
+        return `<li title="${esc(x.text)}"><span class="tag" style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</span>${d ? `<span class="det">${esc(d)}</span>` : ""}</li>`;
+      }).join("");
+    } else if (this._c.compact) {
       ul.innerHTML = shown.length ? shown.map(x => {
         const col = esc(this._colors[x.kind] || this._colors.plant);
         return `<li style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)" title="${esc(x.text)}"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</li>`;
@@ -1205,7 +1234,9 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    advice (land advice lines under the summary, default true; the advice is published either way as the
    window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text, tag }] } for the Hoot card;
    tag is a two-word keyword such as "Frost Thu"), hidden (fetch and publish the advice but draw nothing,
-   for a screen that shows the forecast only in a pop-up). The tablet's browser fetches the data directly (nothing runs in
+   for a screen that shows the forecast only in a pop-up), compact (a weather tile instead of the charts: now
+   from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
+   of the next five days; with navigate set, tapping anywhere opens it, e.g. the full meteogram pop-up). The tablet's browser fetches the data directly (nothing runs in
    Home Assistant) and keeps the last forecast for when the internet is off. Remove this resource to revert. */
 (() => {
 const MODELS = [
@@ -1306,7 +1337,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
   }
 
   set hass(h) {
+    const prevH = this._hass;
     this._hass = h;
+    if (this._c.compact && this._s && prevH && [this._c.current, this._c.uv].some(id => id && prevH.states[id] !== h.states[id])) this._render();
     // the silo level feeds the pump advice; refresh just the advice when it changes
     const sv = this._c.silo && h.states[this._c.silo] ? h.states[this._c.silo].state : null;
     if (sv !== this._siloV) { this._siloV = sv; if (this._s) this._renderAdvice(); }
@@ -1514,6 +1547,27 @@ class CorujeiraMeteogramCard extends HTMLElement {
         .foot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px; font-size:11px; color:var(--secondary-text-color); flex-wrap:wrap; }
         .agree { display:flex; align-items:center; gap:6px; }
         .grad { width:84px; height:8px; border-radius:4px; background:linear-gradient(90deg, ${agreeColor(0)}, ${agreeColor(0.5)}, ${agreeColor(1)}); }
+        ha-card.compact .head, ha-card.compact .legend, ha-card.compact .foot, ha-card.compact .advice { display:none; }
+        ha-card.compact .plot { min-height:0; }
+        ha-card.compact.tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+        .now { display:flex; align-items:center; gap:10px; margin:2px 0 6px; }
+        .now .big { --mdc-icon-size:40px; color:#D4A72C; flex:none; }
+        .now .t { font-size:34px; font-weight:300; line-height:1; color:var(--primary-text-color); }
+        .now .cond { font-size:14px; color:var(--secondary-text-color); line-height:1.2; }
+        .now .chips { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+        .now .chip { display:flex; align-items:center; gap:4px; height:28px; padding:0 10px; border-radius:999px; font-size:13px;
+          background:rgba(52,58,64,.06); color:var(--primary-text-color); white-space:nowrap; }
+        .now .chip ha-icon { --mdc-icon-size:16px; color:var(--secondary-text-color); }
+        .strip { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:4px; margin-top:10px; }
+        .strip .d { text-align:center; padding:6px 0 4px; border-radius:12px; background:rgba(52,58,64,.04); }
+        .strip .d.today { background:rgba(46,139,87,.09); }
+        .strip .nm { font-size:12.5px; font-weight:700; color:var(--primary-text-color); }
+        .strip .d.wk .nm { color:${HI_C}; }
+        .strip ha-icon { --mdc-icon-size:24px; color:var(--secondary-text-color); margin:2px 0; }
+        .strip .hl { font-size:13px; white-space:nowrap; }
+        .strip .hl .h { color:${HI_C}; font-weight:700; } .strip .hl .l { color:${LO_C}; font-weight:700; }
+        .strip .r { font-size:11.5px; color:var(--secondary-text-color); min-height:15px; }
+        .strip .r.wet { color:#2A6FB0; font-weight:700; }
         .empty { padding:40px 0; text-align:center; color:var(--secondary-text-color); font-size:13px; }
       </style>
       <ha-card>
@@ -1524,7 +1578,17 @@ class CorujeiraMeteogramCard extends HTMLElement {
         <div class="foot"><div class="agree"><span>Rain: models agreeing</span><span>0</span><span class="grad"></span><span>100%</span></div><div class="meta"></div></div>
       </ha-card>`;
     const nav = this._c.navigate;
-    if (nav) {
+    if (this._c.compact) {
+      const card = this.shadowRoot.querySelector("ha-card");
+      card.classList.add("compact");
+      if (nav) {
+        card.classList.add("tap");
+        card.addEventListener("click", () => {
+          history.pushState(null, "", nav.startsWith("#") ? location.pathname + location.search + nav : nav);
+          window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        });
+      }
+    } else if (nav) {
       const t = this.shadowRoot.querySelector(".title");
       t.classList.add("link");
       t.insertAdjacentHTML("beforeend", `<span class="chev">›</span>`);
@@ -1553,6 +1617,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const s = this._s, plot = this.shadowRoot.querySelector(".plot");
     if (!s) return;
     if (this._c.hidden) { this._renderAdvice(); return; }
+    if (this._c.compact) { this._renderCompact(); this._renderAdvice(); return; }
     const W = this._w || plot.clientWidth;
     if (!W) { this._renderAdvice(); return; }
     const hours = Math.min(s.n, this._days * 24), days = Math.ceil(hours / 24);
@@ -1582,9 +1647,47 @@ class CorujeiraMeteogramCard extends HTMLElement {
   _renderAdvice() {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
-    if (this._s) publishLand(adv.map(({ pri, kind, text, tag }) => ({ pri, kind, text, tag })));
+    if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail }) => ({ pri, kind, text, tag, detail })));
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
       `<div class="tipline"><ha-icon icon="mdi:sprout-outline"></ha-icon><span>${esc(x.text)}</span></div>`).join("");
+  }
+
+  // Compact weather tile: now, the written forecast, five-day strip.
+  _renderCompact() {
+    const s = this._s, h = this._hass, c = this._c, root = this.shadowRoot;
+    const lang = (h && h.locale && h.locale.language) || "en";
+    const COND = { "clear-night": ["Clear", "weather-night"], cloudy: ["Cloudy", "weather-cloudy"], fog: ["Fog", "weather-fog"],
+      hail: ["Hail", "weather-hail"], lightning: ["Thunder", "weather-lightning"], "lightning-rainy": ["Thunder and rain", "weather-lightning-rainy"],
+      partlycloudy: ["Partly cloudy", "weather-partly-cloudy"], pouring: ["Pouring", "weather-pouring"], rainy: ["Rain", "weather-rainy"],
+      snowy: ["Snow", "weather-snowy"], "snowy-rainy": ["Sleet", "weather-snowy-rainy"], sunny: ["Sunny", "weather-sunny"], windy: ["Windy", "weather-windy"] };
+    const w = c.current && h && h.states[c.current], wa = (w && w.attributes) || {};
+    const [label, icon] = (w && COND[w.state]) || [w ? w.state : "", "weather-partly-cloudy"];
+    const uv = c.uv && h && h.states[c.uv];
+    const chips = [];
+    if (wa.humidity != null) chips.push(`<span class="chip"><ha-icon icon="mdi:water-percent"></ha-icon>${Math.round(wa.humidity)}%</span>`);
+    if (wa.wind_speed != null) chips.push(`<span class="chip"><ha-icon icon="mdi:weather-windy"></ha-icon>${Math.round(wa.wind_speed)} ${esc(wa.wind_speed_unit || "km/h")}</span>`);
+    if (uv && !isNaN(parseFloat(uv.state))) chips.push(`<span class="chip"><ha-icon icon="mdi:sun-wireless-outline"></ha-icon>UV ${Math.round(parseFloat(uv.state))}</span>`);
+    const temp = wa.temperature != null ? `${Math.round(wa.temperature * 10) / 10}°` : "";
+    const days = s.days.slice(0, 5), best = Math.max(0, ...s.days.map(d => d.sun || 0));
+    const today = new Date().toLocaleDateString("sv");
+    const dayIcon = d => d.p >= 0.5 && d.amt >= 8 ? "weather-pouring" : d.p >= 0.5 && d.amt >= 1 ? "weather-rainy"
+      : d.sun != null && best && d.sun >= best * 0.7 ? "weather-sunny" : d.sun != null && best && d.sun >= best * 0.4 ? "weather-partly-cloudy" : "weather-cloudy";
+    const strip = days.map(d => {
+      const dt = new Date(d.date + "T12:00:00"), wk = dt.getDay() === 0 || dt.getDay() === 6;
+      const nm = d.date === today ? "Today" : dt.toLocaleDateString(lang, { weekday: "short" });
+      const mm = d.amt * d.p, wet = d.p >= 0.5 && d.amt >= WET_DAY;
+      return `<div class="d${d.date === today ? " today" : ""}${wk ? " wk" : ""}"><div class="nm">${esc(nm)}</div><ha-icon icon="mdi:${dayIcon(d)}"></ha-icon>
+        <div class="hl">${d.high != null ? `<span class="h">${Math.round(d.high)}°</span> <span class="l">${Math.round(d.low)}°</span>` : ""}</div>
+        <div class="r${wet ? " wet" : ""}">${wet ? `${f1(mm)} mm` : d.p >= 0.3 ? "showers" : "dry"}</div></div>`;
+    }).join("");
+    root.querySelector(".plot").innerHTML = `<div class="now">${w ? `<ha-icon class="big" icon="mdi:${icon}"></ha-icon>` : ""}<div><div class="t">${temp}</div><div class="cond">${esc(label)}</div></div><div class="chips">${chips.join("")}</div></div>`;
+    root.querySelector(".summary").textContent = this._summary(s.days.slice(0, 5), lang);
+    // order: now, written forecast, five-day strip
+    const card = root.querySelector("ha-card"), plot = root.querySelector(".plot"), info = root.querySelector(".info");
+    let st = root.querySelector(".strip");
+    if (!st) { st = document.createElement("div"); st.className = "strip"; }
+    card.prepend(plot); plot.after(info); info.after(st);
+    st.innerHTML = strip;
   }
 
   // Draws one SVG: the temperature panel, the rain/wind panel, or both stacked. Returns the markup and the
@@ -1778,7 +1881,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     // short day for the keyword tags: today, tomorrow, then Wed, Thu…
     const sday = i => { const n = name(days[i]); return n === "today" || n === "tomorrow" ? n
       : new Date(days[i].date + "T12:00:00").toLocaleDateString(lang, { weekday: "short" }); };
-    const r = Math.round, out = [], add = (pri, at, text, kind, tag) => out.push({ pri, at, text, kind, tag });
+    const r = Math.round, out = [], add = (pri, at, text, kind, tag, detail) => out.push({ pri, at, text, kind, tag, detail });
     const runs = test => {
       const res = [];
       days.forEach((d, i) => {
@@ -1847,14 +1950,14 @@ class CorujeiraMeteogramCard extends HTMLElement {
     }
     if (!heavy.length) {
       const ri = days.findIndex((d, i) => i <= 2 && wet(d) && d.amt * d.p >= LAND.rainDue);
-      if (ri >= 0) add(3, ri, `Rain due ${name(days[ri])} (about ${r(days[ri].amt * days[ri].p)} mm): hold off watering.`, "rain", `Rain ${sday(ri)}`);
+      if (ri >= 0) add(3, ri, `Rain due ${name(days[ri])} (about ${r(days[ri].amt * days[ri].p)} mm): hold off watering.`, "rain", `Rain ${sday(ri)}`, `about ${r(days[ri].amt * days[ri].p)} mm, hold off watering`);
     }
 
     // soil: a mild, dry day straight after rain is a planting window
     for (let i = 1; i < days.length; i++) {
       const prev = days[i - 1], d = days[i];
       if (wet(prev) && d.p < 0.3 && d.high != null && d.high >= 12 && d.high <= 24 && d.low != null && d.low >= 5) {
-        add(3, i, `Moist soil after ${name(prev)}'s rain: ${name(d)} is a good day to plant out or sow.`, "plant", `Plant ${sday(i)}`);
+        add(3, i, `Moist soil after ${name(prev)}'s rain: ${name(d)} is a good day to plant out or sow.`, "plant", `Plant ${sday(i)}`, `moist soil after ${name(prev)}'s rain`);
         break;
       }
     }
@@ -2102,9 +2205,14 @@ const fitter = {
   // Equal-height columns: work in the view's own (unzoomed) pixels so zoom never feeds back.
   fill(v, on) {
     const root = v.shadowRoot;
-    const grid = root && [...root.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");
+    // the grid that holds the sections (in HA 2026.9 a .content grid inside ha-sortable, not the outer container)
+    const grids = root ? [...root.querySelectorAll("*")].filter(e => getComputedStyle(e).display === "grid") : [];
+    let grid = null, secs = [];
+    for (const g of grids) {
+      const kids = [...g.children].filter(e => e.offsetHeight > 0 && this.find(e, "hui-grid-section"));
+      if (kids.length > secs.length) { grid = g; secs = kids; }
+    }
     if (!grid) return;
-    const secs = [...grid.children].filter(e => e.offsetHeight > 0);
     const cols = secs.map(sec => {
       const gs = this.find(sec, "hui-grid-section");
       const box = gs && gs.shadowRoot && [...gs.shadowRoot.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");

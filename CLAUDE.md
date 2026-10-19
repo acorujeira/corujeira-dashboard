@@ -36,6 +36,8 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - Fire line tone: practical, not over-conservative. The land doesn't burn pruning piles, so no burning or burn-registration advice. The low-risk line suggests grinding, welding, chainsaw work, or a fire in the sauna or fire pit.
 - New weather rules go in the meteogram's `_advice`; new fire rules go in Hoot's `_fire`.
 - Each advice line can carry a `tag` (two-word keyword such as "Frost Thu", "Foraging", "Heat spot") for Hoot's `compact` mode, which shows colour-coded keyword chips instead of sentences. Add a tag to every new rule.
+- Hoot `compact` shows a short greeting and, per line, the tag chip plus a few words of `detail` (from the line's `detail`, else the first clause after its lead phrase); `details: false` gives bare chips.
+- Meteogram `compact: true`: a weather tile (now from `current` weather entity, humidity/wind/`uv`, the written forecast, a five-day strip); the kitchen uses it instead of the charts.
 - Meteogram `hidden: true` fetches and publishes advice without drawing (the card hides its slot via `card-visibility-changed`).
 - Meteogram low-silo line (`silo`, `silo_low` default 40%) is off on the dashboard. Scale: 100% = 5,000 L.
 

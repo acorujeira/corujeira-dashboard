@@ -67,9 +67,14 @@ const fitter = {
   // Equal-height columns: work in the view's own (unzoomed) pixels so zoom never feeds back.
   fill(v, on) {
     const root = v.shadowRoot;
-    const grid = root && [...root.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");
+    // the grid that holds the sections (in HA 2026.9 a .content grid inside ha-sortable, not the outer container)
+    const grids = root ? [...root.querySelectorAll("*")].filter(e => getComputedStyle(e).display === "grid") : [];
+    let grid = null, secs = [];
+    for (const g of grids) {
+      const kids = [...g.children].filter(e => e.offsetHeight > 0 && this.find(e, "hui-grid-section"));
+      if (kids.length > secs.length) { grid = g; secs = kids; }
+    }
     if (!grid) return;
-    const secs = [...grid.children].filter(e => e.offsetHeight > 0);
     const cols = secs.map(sec => {
       const gs = this.find(sec, "hui-grid-section");
       const box = gs && gs.shadowRoot && [...gs.shadowRoot.querySelectorAll("*")].find(e => getComputedStyle(e).display === "grid");

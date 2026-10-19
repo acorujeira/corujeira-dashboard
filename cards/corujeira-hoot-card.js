@@ -9,8 +9,10 @@
    fire_risk / fire_risk_tomorrow / alert_level / fires_nearby (entity ids, default Vigia's),
    colors (per kind: mushroom, plant, fire, frost, rain, wind, heat, power, water),
    navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
-   compact (one colour-coded keyword chip per line instead of sentences, e.g. "Frost Thu", "Foraging"; with
-   navigate set, tapping anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card).
+   compact (a short greeting, then one colour-coded keyword chip per line with a few words of detail, e.g.
+   "Foraging  porcini and chanterelles"; details: false leaves the chips alone; with navigate set, tapping
+   anywhere on the card opens the full advice, e.g. a pop-up holding a full Hoot card),
+   nearest_fire (sensor with distance and direction for the heat spot detail, default Vigia's).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
 const KINDS = {
@@ -107,12 +109,20 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const lead = t => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); return m ? `<b>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
 // a keyword for compact mode when a line carries no tag: the lead phrase, cut to three words
 const shortTag = t => String(t).split(/[:.(]/)[0].split(/\s+/).slice(0, 3).join(" ");
+// a few words of detail for compact mode: the line's own detail, or the first clause after its lead phrase
+const detailOf = x => {
+  if (x.detail != null) return x.detail;
+  const m = String(x.text).match(/^(.{4,70}?[:.])\s+(.*)$/s);
+  let r = m ? m[2].split(/[.;]/)[0].trim() : "";
+  if (r.length > 48) { const c = r.split(",")[0]; r = c.length >= 12 && c.length <= 48 ? c : r.slice(0, 46).replace(/\s+\S*$/, "") + "…"; }
+  return r;
+};
 const load = () => { try { return JSON.parse(localStorage.getItem("corujeira-land:advice")); } catch (e) { return null; } };
 
 class CorujeiraHootCard extends HTMLElement {
   setConfig(c) {
     this._c = {
-      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, fire: true, burn_window: true, stale_hours: 18,
+      speaker: "hoot", swap: !c.navigate, max: 6, compact: false, details: true, nearest_fire: "sensor.vigia_nearest_fire", fire: true, burn_window: true, stale_hours: 18,
       fire_risk: "sensor.vigia_fire_risk", fire_risk_tomorrow: "sensor.vigia_fire_risk_tomorrow",
       alert_level: "sensor.vigia_alert_level", fires_nearby: "sensor.vigia_fires_nearby", ...c,
     };
@@ -130,7 +140,7 @@ class CorujeiraHootCard extends HTMLElement {
   set hass(h) {
     const prev = this._hass;
     this._hass = h;
-    const ids = ["fire_risk", "fire_risk_tomorrow", "alert_level", "fires_nearby"].map(k => this._c[k]);
+    const ids = ["fire_risk", "fire_risk_tomorrow", "alert_level", "fires_nearby", "nearest_fire"].map(k => this._c[k]);
     if (!prev || ids.some(id => prev.states[id] !== h.states[id])) this._render();
   }
   connectedCallback() {
@@ -197,7 +207,13 @@ class CorujeiraHootCard extends HTMLElement {
         .compact .who { width:52px; }
         .compact .owl, .compact .cat { width:44px; height:51px; }
         .compact .name { font-size:11px; }
-        .compact .sub, .compact .hello, .compact .more { display:none; }
+        .compact .sub, .compact .more { display:none; }
+        .compact .hello { font-size:13px; color:var(--secondary-text-color); margin-bottom:7px; }
+        .compact.chips-only .hello { display:none; }
+        .compact ul.rows { flex-direction:column; flex-wrap:nowrap; gap:7px; }
+        .compact ul.rows li { display:block; padding:0; border-radius:0; background:none !important; font-weight:400; white-space:normal; line-height:1.5; }
+        .compact ul.rows .tag { display:inline-flex; align-items:center; gap:5px; padding:2px 10px 2px 4px; border-radius:999px; font-size:13.5px; font-weight:700; vertical-align:middle; margin-right:6px; }
+        .compact ul.rows .det { font-size:13px; color:var(--secondary-text-color); vertical-align:middle; }
         .compact .bubble { margin-top:0; padding:8px 10px; }
         .compact .bubble::before { top:calc(50% - 6px); }
         .compact ul { flex-direction:row; flex-wrap:wrap; gap:6px; }
@@ -207,7 +223,7 @@ class CorujeiraHootCard extends HTMLElement {
         ha-card.tap { cursor:pointer; -webkit-tap-highlight-color:transparent; }
         .more { margin-top:6px; background:none; border:none; padding:0; font:inherit; font-size:12px; color:var(--secondary-text-color); cursor:pointer; }
       </style>
-      <ha-card class="${this._c.compact ? "compact" : ""}">
+      <ha-card class="${this._c.compact ? `compact${this._c.details ? "" : " chips-only"}` : ""}">
         <div class="wrap">
           <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div></div>
           <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
@@ -278,7 +294,12 @@ class CorujeiraHootCard extends HTMLElement {
         text = text[0].toUpperCase() + text.slice(1);
         out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
           : `${text} None reported to civil protection yet. Vigia is watching.`,
-          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots` });
+          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots`,
+          detail: (() => {
+            const nf = st(c.nearest_fire), km = nf ? parseFloat(nf.state) : NaN, na = (nf && nf.attributes) || {};
+            const where = !isNaN(km) ? `nearest ${Math.round(km)} km${na.direction ? " " + na.direction : ""}${na.upwind ? ", upwind" : ""}` : `within ${R} km`;
+            return inc ? where : `${where}, none reported`;
+          })() });
       }
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
@@ -294,7 +315,8 @@ class CorujeiraHootCard extends HTMLElement {
       if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
         ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
         : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass.",
-        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate" });
+        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate",
+        detail: r0 <= 1 ? "good for grinding, welding, the sauna" : "fine for the sauna and fire pit" });
     }
     return out;
   }
@@ -309,7 +331,14 @@ class CorujeiraHootCard extends HTMLElement {
     const hello = this.shadowRoot.querySelector(".hello");
     hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : `${hi} ${sp.quiet}`;
     const ul = this.shadowRoot.querySelector("ul");
-    if (this._c.compact) {
+    if (this._c.compact && this._c.details) {
+      hello.textContent = !land && !all.length ? sp.wait : all.length ? hi : `${hi} ${sp.quiet}`;
+      ul.className = "rows";
+      ul.innerHTML = shown.map(x => {
+        const col = esc(this._colors[x.kind] || this._colors.plant), d = detailOf(x);
+        return `<li title="${esc(x.text)}"><span class="tag" style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</span>${d ? `<span class="det">${esc(d)}</span>` : ""}</li>`;
+      }).join("");
+    } else if (this._c.compact) {
       ul.innerHTML = shown.length ? shown.map(x => {
         const col = esc(this._colors[x.kind] || this._colors.plant);
         return `<li style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)" title="${esc(x.text)}"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</li>`;
