@@ -15,7 +15,7 @@ Custom Lovelace cards for the A Corujeira Home Assistant dashboard. Installed vi
 1. `node scripts/build.mjs` joins `cards/*.js` into `dist/corujeira-dashboard.js`.
 2. Commit both the card source and `dist/`. Bump `version` in `package.json`.
 3. Push to `main`. No tags or GitHub releases (cloud sessions get 403); HACS tracks commits on `main`.
-4. In Home Assistant: HACS update information + download for repo id `1411586934`, then hard-refresh the tablet. HACS serves it at `/hacsfiles/corujeira-dashboard/corujeira-dashboard.js`.
+4. In Home Assistant: HACS update information + download for repo id `1411586934`, then hard-refresh the tablet. A download right after a push can fetch the previous build (GitHub lag) while HACS still moves the resource's hacstag: check the served file's version header (`/hacsfiles/corujeira-dashboard/corujeira-dashboard.js`) and download again if it's stale. The kitchen tablet (Fully Kiosk) reloads from HA: press `button.yurt_kitchen_kitchen_dashboard_clear_browser_cache`, then `..._load_start_url`. HACS serves it at `/hacsfiles/corujeira-dashboard/corujeira-dashboard.js`.
 
 ## Previewing a card without HA
 
