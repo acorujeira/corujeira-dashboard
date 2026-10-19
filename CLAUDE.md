@@ -4,7 +4,7 @@ Custom Lovelace cards for the A Corujeira Home Assistant dashboard. Installed vi
 
 ## Layout
 
-- `cards/corujeira-*-card.js`: one file per card (flow, span, forecast, meteogram, hoot, silo, fire, air). Each card's options are documented in its header comment.
+- `cards/corujeira-*-card.js`: one file per card (flow, span, forecast, meteogram, hoot, silo, fire, air, zones). Each card's options are documented in its header comment.
 - `dist/corujeira-dashboard.js`: the built bundle HACS serves.
 - `cards/corujeira-mirror-strategy.js`: dashboard strategy `custom:corujeira-mirror`. The communal kitchen dashboard (`corujeira-kitchen`) is a live mirror of the main one (`corujeira-bubble`) without the Clayhouse light and with the silo read-only. Its `layout` option regroups the main view into three columns for the landscape kitchen tablet (column 1 header, fire, compact Nimbu, light zones, weather now; column 2 energy; column 3 water, air). `set` by card type makes Hoot compact (tap opens the `#nimbu` pop-up on the main dashboard) and runs the meteogram hidden (forecast in the `#weather` pop-up). `kiosk_mode` passes through to the kiosk-mode plugin (hides the header) and `fit: true` zooms the view so it never scrolls; `fill: true` spreads the shorter columns so all three end at the same line (extra space goes before group headings). Change the main dashboard, not the kitchen one.
 - `assets/`: standalone animated SVGs (`hoot.svg`, `nimbu.svg`).
@@ -45,6 +45,10 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - Drawing style: every line is a filled brush stroke from hand-placed points (Catmull-Rom, width swelling about ±16%, gentle wobble, tapered round ends, seeded so it never changes), matching hand-drawn icons in soft charcoal. Shape lives in `BODY` and `drawing()`. Keep it subtle when tuning. Default ink is the text colour softened to 68% against the card background; `ink` overrides.
 - Pump row: switch (disabled while full), 30/60/90 pills, countdown and watts while running. Optional `creek` option adds the creek-clear switch row.
 - `read_only: true` keeps the pump and creek rows as status only (no switches, pills or pop-ups). The kitchen mirror sets it automatically.
+
+### Zones (light zones)
+
+- One row per zone: tap the round icon to switch, drag or tap across the row to set brightness (fill shows the level in the light's colour), dropdown chips (native selects) for each input_select, long-press for the zone pop-up. Replaced the four Bubble zone buttons on 19 Oct 2026.
 
 ### Air
 
