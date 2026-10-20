@@ -2,15 +2,14 @@
    Compact mode is one tile: a headline ("Fresh air", "Damp"), the advice for whatever is out of range, and the temperature.
    Detail mode (for a pop-up) adds one row per reading: a word for its state, a banded bar with a marker where the reading
    sits, and a reference line that says what the number means. Each row can open that reading's graph.
-   Damp advice compares the water held in the air inside and outside (from their dew points), and in cold weather
-   it recommends the wood burner first.
+   Damp is common in the yurt, so there is no standing advice about it: a line only appears when the outside air
+   is clearly drier (dew points compared), so opening up would help. No "light the burner" nudges.
    Options:
      mode:        compact (default) | detail
      name:        default "Air in the yurt"
      icon:        default mdi:weather-windy
      humidity, co2, radon, pm25, voc, temperature: sensor entities (any can be left out)
      outdoor:     weather entity for outside temperature and humidity/dew point (optional; enables damp advice)
-     stove_below: outside °C below which damp advice leads with the wood burner (default 15)
      graphs:      { humidity: "#air-hum-24h", co2: ..., ... } where tapping a row goes in detail mode (optional)
      all_graphs:  path for an "All graphs" link at the foot of the detail view (optional)
      navigate:    where tapping the compact tile goes (e.g. "#air"; default: none)
@@ -57,7 +56,7 @@ const water = (t, rh) => 6.112 * Math.exp(17.67 * t / (t + 243.5)) * rh * 2.1674
 
 class CorujeiraAirCard extends HTMLElement {
   setConfig(c) {
-    this._c = { mode: "compact", name: "Air in the yurt", icon: "mdi:weather-windy", stove_below: 15, graphs: {}, ...c };
+    this._c = { mode: "compact", name: "Air in the yurt", icon: "mdi:weather-windy", graphs: {}, ...c };
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._build();
     if (this._hass) this._render();
@@ -165,25 +164,18 @@ class CorujeiraAirCard extends HTMLElement {
     return isNaN(t) ? null : { t, rh: isNaN(rh) ? null : rh, dp: isNaN(dp) ? null : dp };
   }
 
-  // What to do about the damp: the burner when it's cold, airing out only when the outside air holds less water.
+  // Damp is normal here, so the card only speaks up when airing out would actually help.
   _damp(R, out) {
     const h = R.humidity, t = R.temperature;
-    if (!h) return null;
-    const cold = (out && out.t < this._c.stove_below) || (t && t.v < 16);
-    if (cold) return "<b>Light the wood burner.</b> Warming the yurt dries it out.";
-    if (!out || out.dp == null || !t) return "<b>Air it out</b> when the sun's on it.";
-    const dIn = dew(t.v, h.v);
-    if (out.dp <= dIn - 2) return "<b>Open up:</b> the outside air is drier.";
-    const later = new Date().getHours() < 17 ? "this evening" : "once it cools";
-    if (out.dp >= dIn + 1) return `<b>Keep it shut:</b> outside is wetter. Light the burner ${later}.`;
-    return `Outside is just as moist, so airing won't help. <b>Light the burner ${later}.</b>`;
+    if (!h || !t || !out || out.dp == null) return null;
+    return out.dp <= dew(t.v, h.v) - 2 ? "<b>Open up:</b> the outside air is drier." : null;
   }
 
   // One advice line per reading that is out of range, worst first.
   _advice(R, out) {
     const lines = [];
     const add = (lv, html) => lines.push({ lv, html });
-    if (R.humidity && R.humidity.b.lv && R.humidity.v >= 60) add(R.humidity.b.lv, this._damp(R, out));
+    if (R.humidity && R.humidity.b.lv && R.humidity.v >= 60) { const d = this._damp(R, out); if (d) add(R.humidity.b.lv, d); }
     if (R.humidity && R.humidity.v < 30) add(1, "<b>Dry air.</b> A pot of water on the burner helps.");
     if (R.co2 && R.co2.b.lv) add(R.co2.b.lv, "<b>Open a door or the crown</b> for ten minutes.");
     if (R.pm25 && R.pm25.b.lv) add(R.pm25.b.lv, R.pm25.b.lv === 2
@@ -191,7 +183,6 @@ class CorujeiraAirCard extends HTMLElement {
       : "<b>Some smoke or dust.</b> Air it out once the burner is drawing well.");
     if (R.radon && R.radon.b.lv) add(R.radon.b.lv, "<b>Radon is up:</b> it builds when the yurt stays shut. Air it out daily.");
     if (R.voc && R.voc.b.lv === 2) add(2, "<b>Strong fumes:</b> air it out, and check for paint, solvents or gas.");
-    if (R.temperature && R.temperature.v < 16 && !(R.humidity && R.humidity.v >= 60)) add(1, "<b>Cold:</b> light the wood burner.");
     return lines.sort((a, b) => b.lv - a.lv);
   }
 
