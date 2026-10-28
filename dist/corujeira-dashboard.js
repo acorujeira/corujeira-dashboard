@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.17.2. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.17.3. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.17.2 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.17.3 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2150,7 +2150,8 @@ if (!window.customCards.find(c => c.type === "corujeira-meteogram-card"))
      - passes `kiosk_mode` through for the kiosk-mode plugin (e.g. hide_header: true),
      - with `fit: true`, scales the view while it is open so it fills the screen exactly: no scrolling and
        no side margins (CSS zoom on the sections view, with the layout widened to match, so the columns get
-       wider and shorter as it shrinks; never below `fit_min`, 0.6),
+       wider and shorter as it shrinks; never below `fit_min`, 0.6); charts (apexcharts) get their pointer
+       and box measurements mapped back to unzoomed pixels so the tooltip stays under the finger,
      - with `fill: true` as well, shorter columns grow to the tallest one's height: the spare space goes
        before each group heading (bubble separator) in the column, or between its cards when it has none,
        so every column ends at the same line. Only while the sections sit side by side.
@@ -2268,6 +2269,60 @@ const fitter = {
   },
 };
 
+// ApexCharts under CSS zoom (the kitchen's fit-to-screen): it mixes on-screen (zoomed) pixels from the pointer
+// and getBoundingClientRect with its own unzoomed layout pixels, so the tooltip lags behind the finger by the
+// zoom factor. Inside a zoomed chart, map both pointer events and box measurements into one unzoomed frame
+// anchored at the chart's top-left corner. Charts that are not zoomed are left alone.
+const apexZoomFix = {
+  on: false,
+  install() {
+    if (this.on) return;
+    this.on = true;
+    const self = this, rect = Element.prototype.getBoundingClientRect;
+    this.rect = rect;
+    Element.prototype.getBoundingClientRect = function () {
+      const r = rect.call(this);
+      const f = self.frame(this);
+      if (!f) return r;
+      const x = f.x(r.left), y = f.y(r.top), w = r.width / f.z, h = r.height / f.z;
+      return new DOMRect(x, y, w, h);
+    };
+    for (const t of ["mousemove", "mousedown", "mouseup", "mouseout", "touchstart", "touchmove", "touchend"])
+      window.addEventListener(t, e => this.handle(e), { capture: true, passive: true });
+  },
+  // the zoomed frame for an element inside an apexcharts canvas, or null
+  frame(el) {
+    const canvas = el.closest && el.closest(".apexcharts-canvas");
+    if (!canvas || !canvas.offsetWidth) return null;
+    const c = this.rect.call(canvas), z = c.width / canvas.offsetWidth;
+    if (!z || Math.abs(z - 1) < 0.002) return null;
+    return { z, canvas, x: v => c.left + (v - c.left) / z, y: v => c.top + (v - c.top) / z };
+  },
+  handle(e) {
+    if (e.cjZoomFixed) return;
+    const path = e.composedPath ? e.composedPath() : [];
+    const el = path.find(n => n.classList && n.classList.contains("apexcharts-canvas"));
+    const f = el && this.frame(el);
+    if (!f) return;
+    let ev;
+    if (e.type.startsWith("touch")) {
+      if (typeof Touch === "undefined") return;
+      const map = list => [...list].map(t => new Touch({ identifier: t.identifier, target: t.target,
+        clientX: f.x(t.clientX), clientY: f.y(t.clientY), pageX: f.x(t.clientX) + scrollX, pageY: f.y(t.clientY) + scrollY,
+        screenX: t.screenX, screenY: t.screenY, radiusX: t.radiusX, radiusY: t.radiusY, force: t.force }));
+      ev = new TouchEvent(e.type, { bubbles: true, cancelable: false, composed: true,
+        touches: map(e.touches), targetTouches: map(e.targetTouches), changedTouches: map(e.changedTouches) });
+    } else {
+      ev = new MouseEvent(e.type, { bubbles: true, cancelable: false, composed: true,
+        clientX: f.x(e.clientX), clientY: f.y(e.clientY), screenX: e.screenX, screenY: e.screenY,
+        buttons: e.buttons, button: e.button, relatedTarget: e.relatedTarget });
+    }
+    ev.cjZoomFixed = true;
+    e.stopImmediatePropagation();
+    path[0].dispatchEvent(ev);
+  },
+};
+
 class CorujeiraMirrorStrategy extends HTMLElement {
   static async generate(c, hass) {
     if (!c.source) return errorView("set `source` to the url_path of the dashboard to mirror.");
@@ -2303,7 +2358,7 @@ class CorujeiraMirrorStrategy extends HTMLElement {
     };
     const out = walk(cfg, false);
     if (c.kiosk_mode) out.kiosk_mode = c.kiosk_mode;
-    if (c.fit && here) fitter.watch(here, c.fit_min, c.fill);
+    if (c.fit && here) { fitter.watch(here, c.fit_min, c.fill); apexZoomFix.install(); }
     const lay = c.layout;
     if (lay && Array.isArray(lay.columns) && lay.columns.length) {
       const view = lay.view ? out.views.find(v => v.path === lay.view) : out.views[0];
