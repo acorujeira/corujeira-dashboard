@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.17.3. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.18.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.17.3 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.18.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2414,6 +2414,9 @@ if (!customElements.get("ll-strategy-dashboard-corujeira-mirror"))
      creek:      input_boolean that says the creek has been checked and is running clear (optional, shown under the pump;
                  on = clear, off = check it after rain)
      creek_name: default "Creek"
+     fault:      binary_sensor that is on when the level sensor needs cleaning (optional; shows an amber "Clean sensor" line,
+                 tap opens it)
+     fault_text: default "No echo from the level sensor. Wipe the condensation off its face."
      read_only:  true shows the pump and creek as status only: no switches, no run-time pills, no pop-ups (default false)
      ink:        line colour of the drawing (default a soft charcoal: the theme's text colour, softened)
      tap_action: { action: more-info | navigate | none, navigation_path } (default more-info on entity); applies to the tank and figures
@@ -2561,6 +2564,12 @@ class CorujeiraSiloCard extends HTMLElement {
         .sw.small::after { width:20px; height:20px; }
         .sw.small[aria-checked="true"]::after { transform:translateX(20px); }
         .ro .pname { cursor:default; }
+        .fault { display:none; align-items:center; gap:8px; padding:7px 10px; border-radius:10px; cursor:pointer;
+          background:color-mix(in srgb, #B9772C 14%, transparent); -webkit-tap-highlight-color:transparent; }
+        .fault.show { display:flex; }
+        .fault ha-icon { --mdc-icon-size:20px; color:#B9772C; flex:none; }
+        .fault b { display:block; font-size:13.5px; color:#B9772C; }
+        .fault span { display:block; font-size:12px; line-height:1.3; color:var(--secondary-text-color); }
       </style>
       <ha-card>
         <div class="row">
@@ -2589,6 +2598,8 @@ class CorujeiraSiloCard extends HTMLElement {
               <div class="sub cap"></div>
               <div class="sub dist"></div>
             </div>
+            ${this._c.fault ? `<div class="fault" role="status"><ha-icon icon="mdi:spray-bottle"></ha-icon>
+              <div><b>Clean sensor</b><span class="ftext"></span></div></div>` : ""}
             ${pump ? `
             <div class="pump${ro ? " ro" : ""}">
               <div class="ptop">
@@ -2610,7 +2621,11 @@ class CorujeiraSiloCard extends HTMLElement {
     const r = this.shadowRoot, q = s => r.querySelector(s);
     this._el = { svg: q("svg"), levels: r.querySelectorAll(".level"), pcts: r.querySelectorAll(".pct"), name: q(".name"),
       litres: q(".litres"), cap: q(".cap"), dist: q(".dist"), sw: q(".sw"), stream: q(".stream"), pstate: q(".pstate"), pills: q(".pills"),
-      csw: q(".csw"), cstate: q(".cstate"), cname: q(".cname") };
+      csw: q(".csw"), cstate: q(".cstate"), cname: q(".cname"), fault: q(".fault") };
+    if (this._el.fault) {
+      q(".ftext").textContent = this._c.fault_text || "No echo from the level sensor. Wipe the condensation off its face.";
+      this._el.fault.addEventListener("click", e => { e.stopPropagation(); this._more(this._c.fault); });
+    }
     this._el.name.textContent = this._c.name;
     const open = () => this._tap();
     [q(".tank"), q(".info")].forEach(el => el.addEventListener("click", open));
@@ -2677,8 +2692,8 @@ class CorujeiraSiloCard extends HTMLElement {
   _render() {
     const c = this._c;
     const lvl = this._num(c.entity), vol = this._num(c.volume), dist = this._num(c.distance);
-    const ps = this._st(c.pump), ts = this._st(c.pump_timer), rs = this._st(c.pump_run_time), pw = this._num(c.pump_power), cs = this._st(c.creek);
-    const key = [lvl, vol, dist, ps && ps.state, ts && ts.state, ts && ts.attributes.finishes_at, ts && ts.attributes.remaining, rs && rs.state, pw, cs && cs.state].join("|");
+    const ps = this._st(c.pump), ts = this._st(c.pump_timer), rs = this._st(c.pump_run_time), pw = this._num(c.pump_power), cs = this._st(c.creek), fs = this._st(c.fault);
+    const key = [fs && fs.state, lvl, vol, dist, ps && ps.state, ts && ts.state, ts && ts.attributes.finishes_at, ts && ts.attributes.remaining, rs && rs.state, pw, cs && cs.state].join("|");
     if (key === this._key) return;
     this._key = key;
 
@@ -2698,6 +2713,7 @@ class CorujeiraSiloCard extends HTMLElement {
     const unit = this._st(c.distance) && this._st(c.distance).attributes.unit_of_measurement;
     const m = dist == null ? null : unit === "mm" ? dist / 1000 : unit === "cm" ? dist / 100 : dist;
     this._el.dist.textContent = m == null ? "" : `${m.toFixed(2)} m from sensor to water`;
+    if (this._el.fault) this._el.fault.classList.toggle("show", !!fs && fs.state === "on");
 
     if (!c.pump) return;
     const on = !!ps && ps.state === "on";
@@ -2758,7 +2774,7 @@ class CorujeiraSiloCard extends HTMLElement {
       st.textContent = `Running${watts}`;
     }
   }
-  getCardSize() { return this._c && this._c.pump ? (this._c.creek ? 5 : 4) : 3; }
+  getCardSize() { return (this._c && this._c.pump ? (this._c.creek ? 5 : 4) : 3) + (this._c && this._c.fault ? 1 : 0); }
   getGridOptions() { return { columns: 12, rows: "auto" }; }
 }
 if (!customElements.get("corujeira-silo-card")) customElements.define("corujeira-silo-card", CorujeiraSiloCard);
