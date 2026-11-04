@@ -277,12 +277,14 @@ class CorujeiraHootCard extends HTMLElement {
     const h = this._hass, c = this._c, out = [];
     if (!h || !c.fire) return out;
     const st = id => h.states[id], num = id => { const s = st(id); const v = s ? parseFloat(s.state) : NaN; return isNaN(v) ? null : v; };
+    // The speaker keeps watch in its own voice.
+    const watch = this._who === "nimbu" ? "I'll keep sniffing the wind." : "I'll keep an eye on the hills.";
     const al = st(c.alert_level);
     if (al && ["watch", "upwind", "close"].includes(al.state)) {
       const a = al.attributes, km = a.distance_km != null ? `${Math.round(a.distance_km)} km` : "nearby";
       const where = `${km}${a.direction ? " " + a.direction : ""}${a.upwind ? ", upwind" : ""}`;
       const what = al.state === "close" ? "Fill the buckets, keep the hoses ready, and have the go-bag by the car."
-        : al.state === "upwind" ? "Smoke may reach us. Close the yurt, keep an eye on the sky and the Vigia map." : "Vigia is watching it.";
+        : al.state === "upwind" ? "Smoke may reach us. Close the yurt, keep an eye on the sky and the Vigia map." : watch;
       out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}`, tag: `Fire ${km}${a.direction ? " " + a.direction : ""}` });
     } else {
       const n = num(c.fires_nearby);
@@ -294,8 +296,8 @@ class CorujeiraHootCard extends HTMLElement {
         if (heat) bits.push(`${heat === 1 ? "a satellite heat spot" : heat + " satellite heat spots"}`);
         let text = `${bits.join(" and ")} within ${R} km.`;
         text = text[0].toUpperCase() + text.slice(1);
-        out.push({ pri: 2, kind: "fire", text: inc ? `${text} Vigia is watching.`
-          : `${text} None reported to civil protection yet. Vigia is watching.`,
+        out.push({ pri: 2, kind: "fire", text: inc ? `${text} ${watch}`
+          : `${text} None reported to civil protection yet. ${watch}`,
           tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots`,
           detail: (() => {
             const nf = st(c.nearest_fire), km = nf ? parseFloat(nf.state) : NaN, na = (nf && nf.attributes) || {};
