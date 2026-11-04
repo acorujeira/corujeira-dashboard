@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.19.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.19.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.19.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.19.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1976,7 +1976,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const soaked = soaks.filter(e => e.mm >= LAND.soak);
     const when = rel => rel >= 0 && rel < days.length ? name(days[rel])
       : new Date(base + rel * DAY).toLocaleDateString(lang, { day: "numeric", month: "short" });
-    const rainLabel = e => e.end < 0 ? `the ${when(e.start)} rain` : `${when(e.start)}'s rain`;
+    // a soak can run over several days, so name the whole run, not just its first day
+    const rainLabel = e => e.start !== e.end ? `the rain from ${when(e.start)} to ${when(e.end)}`
+      : e.end < 0 ? `the ${when(e.start)} rain` : `${when(e.start)}'s rain`;
     const mild = d => d.high != null && d.low != null && d.low > LAND.frost && d.high >= 8 && d.high <= 26;
     // a window [from, to] (days after a soak) clipped to the forecast, keeping only mild, frost-free days
     const windowIn = (e, from, to) => {
@@ -1996,7 +1998,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
         break;
       }
       const ahead = soaked.find(e => e.start >= 0 && e.end + LAND.forageFrom > days.length - 1);
-      if (!done && ahead) add(3, ahead.start, `${rainLabel(ahead).replace(/^./, c => c.toUpperCase())} (about ${r(ahead.mm)} mm) should bring woodland mushrooms up from around ${when(ahead.end + LAND.forageFrom)}.`, "mushroom", "Mushrooms soon");
+      if (!done && ahead) add(3, ahead.start, `${rainLabel(ahead).replace(/^./, c => c.toUpperCase())} (about ${r(ahead.mm)} mm${ahead.start !== ahead.end ? " in all" : ""}) should bring woodland mushrooms up from around ${when(ahead.end + LAND.forageFrom)}.`, "mushroom", "Mushrooms soon");
     }
     // shiitake logs (open air, rain-fed): expect fruiting a few days after a decent rain
     for (const e of [...soaks].reverse()) {
