@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.22.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.23.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.22.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.23.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1234,7 +1234,11 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    profile_days, default 30, against Open-Meteo's past sunshine, hour by hour, so the arrays' tilt and the land's
    shade are built in; the power advice then judges days by expected kWh and names the hours when the panels
    should give sun_window_w, default 1000 W, or more; the hourly outlook is also published as window.__corujeiraSolar,
-   localStorage "corujeira-solar" and the event "corujeira-solar" for the energy charts), hidden (fetch and publish the advice but draw nothing,
+   localStorage "corujeira-solar" and the event "corujeira-solar" for the energy charts), loads (consumption
+   sensor in W) and battery_kwh (usable battery size): with battery, pv, loads and battery_kwh the power line runs
+   the battery forward over horizon_h (96) hours and says "hold off on the air fryer and Instant Pot" only when a
+   cook (heavy_kwh, default 1, doubled for safety) would cut into charge the next days need, or "spare sun" when
+   the battery will fill anyway), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -1264,6 +1268,7 @@ const MEAN = "#2E8B57", HI_C = "#D9573F", LO_C = "#3D9BC9", WIND_C = "#5E665B", 
 // land advice thresholds (all on the median of the models)
 const LAND = { frost: 2, heavyRain: 15, gale: 60, hot: 30, dullFrac: 0.45, dullAbs: 1.2, brightFrac: 0.85, brightMin: 2, dryRun: 4, dryHigh: 30, rainDue: 5,
   dullPv: 3.5, brightPv: 6,      // expected kWh from the panels for a dull / bright day (with the pv option)
+  battFloor: 0.35,               // share of battery_kwh the charge should stay above through the coming days
   soak: 20,                      // mm over consecutive wet days (each >= 3 mm) that counts as a soaking rain
   forageFrom: 7, forageTo: 14,   // days after a soaking rain when woodland mushrooms come up
   logRain: 10, farmFrom: 2, farmTo: 5, // open-air shiitake logs fruit a few days after a decent rain (mm)
@@ -1337,6 +1342,12 @@ const siteProfile = (pv, batt, om) => {
   return sp.map((v, h) => n[h] >= 4 ? Math.round(v / sg[h] * 1000) / 1000 : 0);
 };
 
+// Usual load (W) for each UTC hour, averaged over the hourly statistics of a consumption sensor; null if thin.
+const loadProfile = st => {
+  const sum = Array(24).fill(0), n = Array(24).fill(0);
+  for (const r of st || []) { if (r.mean == null) continue; const h = new Date(msOf(r.start)).getUTCHours(); sum[h] += r.mean; n[h]++; }
+  return n.every(k => k >= 3) ? sum.map((v, h) => Math.round(v / n[h])) : null;
+};
 // Expected kWh for day i from hourly expected watts (slot h is the hour ending at forecast hour h); null if thin.
 const dayKwh = (pvH, i) => { let t = 0, k = 0; for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) if (pvH[h] != null) { t += pvH[h]; k++; } return k >= 18 ? t / 1000 : null; };
 // The run of hours in day i with at least minW expected (slots ending at or before `after` are skipped), by energy.
@@ -1361,7 +1372,7 @@ const publishSolar = d => {
 
 class CorujeiraMeteogramCard extends HTMLElement {
   setConfig(c) {
-    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, battery_low: 50, sun_window_w: 1000, profile_days: 30, ...c };
+    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, battery_low: 50, sun_window_w: 1000, profile_days: 30, heavy_kwh: 1, horizon_h: 96, ...c };
     const want = Array.isArray(c.models) ? c.models : MODELS.map(m => m[0]);
     this._models = want.map(id => MODELS.find(m => m[0] === id) || [id, id, "#9AA5B1"]);
     this._hidden = new Set();
@@ -1439,7 +1450,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const k = `corujeira-meteogram:pv:${id}`;
     // a cached profile arrives after the first advice pass on load, so redo the advice with it
     if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) { this._prof = hit; if (this._s) this._renderAdvice(); } }
-    if (this._prof && Date.now() - this._prof.ts < 6 * 3600e3) return;
+    const lid = this._c.loads, stale = lid && !this._prof?.load;
+    if (this._prof && !stale && Date.now() - this._prof.ts < 6 * 3600e3) return;
     if (this._profTry && Date.now() - this._profTry < 30 * 60e3) return;
     const c = this._coords();
     if (!c) return;
@@ -1449,12 +1461,12 @@ class CorujeiraMeteogramCard extends HTMLElement {
       past_days: days, forecast_days: 1, timezone: "GMT", timeformat: "unixtime" });
     Promise.all([
       h.callWS({ type: "recorder/statistics_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
-        statistic_ids: bid ? [id, bid] : [id], period: "hour", types: ["mean"] }),
+        statistic_ids: [id, bid, lid].filter(Boolean), period: "hour", types: ["mean"] }),
       fetch(`${API}?${q}`).then(r => r.ok ? r.json() : Promise.reject(r.status)),
     ]).then(([st, om]) => {
       const f = siteProfile(st[id], bid ? st[bid] : [], om.hourly);
       if (!f) return;
-      this._prof = { ts: Date.now(), f };
+      this._prof = { ts: Date.now(), f, load: lid ? loadProfile(st[lid]) : null };
       store.set(k, this._prof);
       if (this._s) this._renderAdvice();
     }).catch(() => {}).finally(() => { this._profBusy = false; });
@@ -1465,6 +1477,24 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const s = this._s, f = this._prof && this._prof.f;
     if (!s || !f || !s.swMed) return null;
     return s.swMed.map((g, i) => i === 0 || g == null ? null : f[new Date(s.t0 + (i - 1) * 3600e3).getUTCHours()] * g);
+  }
+  // Battery charge (kWh) hour by hour from now: expected solar in, usual load out (over an inverter efficiency of
+  // 0.9), capped at battery_kwh. drawKwh is taken out up front (a cook now). Returns the lowest charge reached
+  // within `hours`, or null without the battery, loads and pv data.
+  _battLow(pvH, soc, drawKwh, hours) {
+    const s = this._s, load = this._prof && this._prof.load, cap = this._c.battery_kwh;
+    if (!pvH || !load || !cap || soc == null) return null;
+    const now = Date.now();
+    let E = soc / 100 * cap - drawKwh, min = E;
+    for (let i = 1; i < pvH.length; i++) {
+      const a = s.t0 + (i - 1) * 3600e3, b = a + 3600e3;
+      if (b <= now) continue;
+      if (a > now + hours * 3600e3) break;
+      const frac = a < now ? (b - now) / 3600e3 : 1;
+      E = Math.min(cap, E + ((pvH[i] || 0) - load[new Date(a).getUTCHours()] / 0.9) / 1000 * frac);
+      min = Math.min(min, E);
+    }
+    return min;
   }
   _solar() {
     const s = this._s, f = this._prof && this._prof.f, pvH = this._pvHours();
@@ -2059,64 +2089,31 @@ class CorujeiraMeteogramCard extends HTMLElement {
       add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water", `Pump off ${sday(heavy[0].a)}`);
     }
 
-    // power: two or more dull days in a row, or else the best sun hours for heavy loads. With a battery charge
-    // sensor (option battery: sensor in %, battery_low default 50) a low battery plus one dull day also counts.
-    // The air fryer and Instant Pot are the big kitchen loads, so they get named whenever the sun can't refill.
-    // With the pv option days are judged by expected kWh from the panels and the lines name the hours to use.
+    // power: whether the sun ahead is spare or needed to keep the battery up. With battery (charge %), battery_kwh,
+    // loads and pv the card runs the battery forward hour by hour over the next horizon_h hours (expected solar in,
+    // usual load out) and asks whether a cook now (twice heavy_kwh, to leave room for a forecast that's off) would
+    // lower the lowest charge. If the sun refills it anyway, the cook is free; if not, and the battery would dip
+    // under battFloor, hold off. Without that data: dull days or a low battery with a dull day mean hold off.
+    // Kept short on purpose: the outlook chart has the hours.
     const bid = this._c.battery, bs = bid && this._hass && this._hass.states[bid];
     const batt = bs && !isNaN(parseFloat(bs.state)) ? r(parseFloat(bs.state)) : null;
-    const battLow = batt != null && batt < this._c.battery_low;
-    const pvH = this._pvHours(), now = Date.now(), t0 = this._s ? this._s.t0 : 0;
+    const pvH = this._pvHours();
     const sunOf = pvH ? days.map((d, i) => dayKwh(pvH, i)) : days.map(d => d.sun);
-    // the run of hours in day i when the panels should give sun_window_w or more (today: from now on)
-    const sunWin = i => pvH ? sunWindow(pvH, i, this._c.sun_window_w, t0, i === 0 ? now : 0) : null;
-    const hh = h => `${String(((h % 24) + 24) % 24).padStart(2, "0")}:00`;
-    const live = w => w && t0 + (w.a - 1) * 3600e3 <= now;   // the window has already started
-    const hours = w => live(w) ? `now until ${hh(w.b)}` : `${hh(w.a - 1)} to ${hh(w.b)}`;
-    const dayAt = i => { const w = sunWin(i); return !w ? name(days[i]) : live(w) ? hours(w) : `${name(days[i])}, ${hours(w)}`; };
     const sunVals = sunOf.filter(v => v != null), best = sunVals.length ? Math.max(...sunVals) : 0;
-    const absDull = pvH ? LAND.dullPv : LAND.dullAbs, absBright = pvH ? LAND.brightPv : LAND.brightMin;
-    if (best > 0) {
-      const isDull = i => sunOf[i] != null && (sunOf[i] < absDull || sunOf[i] < best * LAND.dullFrac);
-      const bright = from => sunOf.findIndex((v, i) => i > from && v != null && v >= best * 0.7);
-      const dull = runs((d, i) => isDull(i)).filter(x => x.b > x.a);
-      const lowDay = battLow ? [0, 1].find(i => days[i] && isDull(i)) : undefined;
-      if (dull.length) {
-        const u = dull[0], next = bright(u.b);
-        const easy = `go easy on the battery${battLow ? ` (at ${batt}%)` : ""}`;
-        let tip;
-        if (u.a === 0) tip = next >= 0 ? `Keep the air fryer and Instant Pot off, and save pumping and power tools for ${dayAt(next)}.`
-          : "Keep the air fryer, Instant Pot and other big loads off where you can.";
-        // with a wet spell coming the pump line already says when to pump (before the creek runs muddy)
-        else {
-          // the best sun hours left before the dull run (today's remaining hours count), if the profile knows them
-          let k = -1, e = 0;
-          for (let i = 0; i < u.a; i++) { const w = sunWin(i); if (w && w.e > e) { e = w.e; k = i; } }
-          const until = next >= 0 ? dayAt(next) : "the sun returns";
-          tip = k >= 0 ? `Run ${spell ? "" : "the pump, "}power tools and any air fryer or Instant Pot cooking ${dayAt(k)}, then keep the air fryer and Instant Pot off until ${until}.`
-            : `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${until}.`;
-          var detail = k >= 0 ? `big loads ${k === 0 ? "today" : sday(k)}` : `power tools by ${sday(u.a - 1)}`;
-        }
-        add(2, u.a, `Little sun ${span(u.a, u.b)}: ${easy}. ${tip}`, "power", `Low sun ${sday(u.a)}`,
-          u.a === 0 ? "air fryer and Instant Pot off" : detail);
-      } else if (lowDay !== undefined) {
-        const next = bright(lowDay);
-        add(2, lowDay, `Battery at ${batt}% with little sun ${name(days[lowDay])}: keep the air fryer and Instant Pot off until ${next >= 0 ? dayAt(next) : "the sun returns"}.`,
-          "power", `Battery ${batt}%`, "air fryer and Instant Pot off");
-      } else {
-        const br = best >= absBright ? runs((d, i) => sunOf[i] != null && sunOf[i] >= best * LAND.brightFrac).filter(x => x.b > x.a) : [];
-        const k = sunWin(0) ? 0 : sunWin(1) ? 1 : -1;
-        if (k >= 0) {
-          // the hours to run heavy loads straight off the panels, today if any are left, else tomorrow
-          const w = sunWin(k), b0 = br.find(x => x.a <= k && x.b >= k);
-          const lead = b0 ? `Bright ${span(b0.a, b0.b)}` : `Good sun ${name(days[k])}`;
-          const when = live(w) ? hours(w) : `${b0 && k === 1 ? "tomorrow " : ""}${hh(w.a - 1)} to ${hh(w.b)}`;
-          add(3, k, `${lead}: run the air fryer, Instant Pot, pump and power tools ${when}, when the panels give about ${f1(w.peak / 1000)} kW.`,
-            "power", `Sun ${String((w.a - 1) % 24).padStart(2, "0")}-${String(w.b % 24).padStart(2, "0")}h`,
-            `${live(w) ? "now" : name(days[k])}, for the big loads`);
-        } else if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power", `Bright ${sday(br[0].a)}`);
-      }
-    }
+    const absDull = pvH ? LAND.dullPv : LAND.dullAbs;
+    const isDull = i => sunOf[i] != null && (sunOf[i] < absDull || sunOf[i] < best * LAND.dullFrac);
+    const dullRun = best > 0 ? runs((d, i) => isDull(i)).find(x => x.b > x.a && x.a <= 2) : null;
+    const hold = (why, at) => add(2, at, `Hold off on the air fryer and Instant Pot: ${why}.`, "power", "Save battery", "no air fryer or Instant Pot");
+    const why = dullRun ? `little sun ${dullRun.a === 0 ? "until" : "from " + name(days[dullRun.a]) + " to"} ${name(days[dullRun.b])}` : null;
+    const lowest = this._battLow(pvH, batt, 0, this._c.horizon_h);
+    if (lowest != null) {
+      const cap = this._c.battery_kwh, cook = this._battLow(pvH, batt, 2 * this._c.heavy_kwh, this._c.horizon_h);
+      const free = lowest - cook < 0.2;
+      if (!free && cook < cap * LAND.battFloor) hold(why || "let the sun fill the battery", 0);
+      else if (free && pvH && sunWindow(pvH, 0, this._c.sun_window_w, this._s.t0, Date.now()))
+        add(3, 0, "Spare sun today: fine for the air fryer and Instant Pot.", "power", "Spare sun", "air fryer and Instant Pot fine");
+    } else if (dullRun) hold(why, dullRun.a);
+    else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery at ${batt}%`, 0);
 
     // water: a dry, warm spell starting soon, or rain on its way
     const dry = runs(d => d.n && d.p < 0.3 && d.high != null && d.high >= LAND.dryHigh).filter(x => x.b - x.a + 1 >= LAND.dryRun);
