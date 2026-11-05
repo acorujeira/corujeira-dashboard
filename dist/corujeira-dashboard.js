@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.23.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.23.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.23.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.23.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1237,8 +1237,7 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    localStorage "corujeira-solar" and the event "corujeira-solar" for the energy charts), loads (consumption
    sensor in W) and battery_kwh (usable battery size): with battery, pv, loads and battery_kwh the power line runs
    the battery forward over horizon_h (96) hours and says "hold off on the air fryer and Instant Pot" only when a
-   cook (heavy_kwh, default 1, doubled for safety) would cut into charge the next days need, or "spare sun" when
-   the battery will fill anyway), hidden (fetch and publish the advice but draw nothing,
+   cook (heavy_kwh, default 1, doubled for safety) would cut into charge the next days need), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -2092,8 +2091,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     // power: whether the sun ahead is spare or needed to keep the battery up. With battery (charge %), battery_kwh,
     // loads and pv the card runs the battery forward hour by hour over the next horizon_h hours (expected solar in,
     // usual load out) and asks whether a cook now (twice heavy_kwh, to leave room for a forecast that's off) would
-    // lower the lowest charge. If the sun refills it anyway, the cook is free; if not, and the battery would dip
-    // under battFloor, hold off. Without that data: dull days or a low battery with a dull day mean hold off.
+    // lower the lowest charge. If the sun refills it anyway, the cook is free and nothing is said; if not, and the
+    // battery would dip under battFloor, hold off. Only the hold-off line is ever shown. Without that data: dull days or a low battery with a dull day mean hold off.
     // Kept short on purpose: the outlook chart has the hours.
     const bid = this._c.battery, bs = bid && this._hass && this._hass.states[bid];
     const batt = bs && !isNaN(parseFloat(bs.state)) ? r(parseFloat(bs.state)) : null;
@@ -2110,8 +2109,6 @@ class CorujeiraMeteogramCard extends HTMLElement {
       const cap = this._c.battery_kwh, cook = this._battLow(pvH, batt, 2 * this._c.heavy_kwh, this._c.horizon_h);
       const free = lowest - cook < 0.2;
       if (!free && cook < cap * LAND.battFloor) hold(why || "let the sun fill the battery", 0);
-      else if (free && pvH && sunWindow(pvH, 0, this._c.sun_window_w, this._s.t0, Date.now()))
-        add(3, 0, "Spare sun today: fine for the air fryer and Instant Pot.", "power", "Spare sun", "air fryer and Instant Pot fine");
     } else if (dullRun) hold(why, dullRun.a);
     else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery at ${batt}%`, 0);
 
