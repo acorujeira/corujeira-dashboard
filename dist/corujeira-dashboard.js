@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.23.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.24.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.23.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.24.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1237,7 +1237,9 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    localStorage "corujeira-solar" and the event "corujeira-solar" for the energy charts), loads (consumption
    sensor in W) and battery_kwh (usable battery size): with battery, pv, loads and battery_kwh the power line runs
    the battery forward over horizon_h (96) hours and says "hold off on the air fryer and Instant Pot" only when a
-   cook (heavy_kwh, default 1, doubled for safety) would cut into charge the next days need), hidden (fetch and publish the advice but draw nothing,
+   cook (heavy_kwh, default 1, doubled for safety) would cut into charge the next days need), forecast_today,
+   forecast_tomorrow (input_numbers) and forecast_logged (date-only input_datetime): once a day from 05:00 the
+   card writes the expected kWh for today and tomorrow there, so the forecast can be scored against sensor.solar_today), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -1494,6 +1496,22 @@ class CorujeiraMeteogramCard extends HTMLElement {
       min = Math.min(min, E);
     }
     return min;
+  }
+  // Once a day, from 05:00, write today's and tomorrow's expected kWh to input_numbers (forecast_today,
+  // forecast_tomorrow) and the date to forecast_logged (input_datetime, date only), so HA keeps a record to score
+  // the forecast against what the panels made. Whichever screen gets there first writes it.
+  _logForecast(sol) {
+    const h = this._hass, c = this._c, today = new Date().toLocaleDateString("sv");
+    if (!h || !c.forecast_logged || !c.forecast_today || new Date().getHours() < 5 || this._logged === today) return;
+    const lg = h.states[c.forecast_logged];
+    if (!lg) return;
+    this._logged = today;
+    if (lg.state === today) return;
+    const day = k => sol.days.find(x => x.date === new Date(Date.now() + k * 864e5).toLocaleDateString("sv"));
+    const set = (id, v) => id && v != null && h.callService("input_number", "set_value", { entity_id: id, value: v });
+    set(c.forecast_today, (day(0) || {}).kwh);
+    set(c.forecast_tomorrow, (day(1) || {}).kwh);
+    h.callService("input_datetime", "set_datetime", { entity_id: c.forecast_logged, date: today });
   }
   _solar() {
     const s = this._s, f = this._prof && this._prof.f, pvH = this._pvHours();
@@ -1782,7 +1800,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
     if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail }) => ({ pri, kind, text, tag, detail })));
     const sol = this._s && this._solar();
-    if (sol) publishSolar(sol);
+    if (sol) { publishSolar(sol); this._logForecast(sol); }
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
       `<div class="tipline"><ha-icon icon="mdi:sprout-outline"></ha-icon><span>${esc(x.text)}</span></div>`).join("");
   }
