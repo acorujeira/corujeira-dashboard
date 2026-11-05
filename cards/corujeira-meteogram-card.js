@@ -217,7 +217,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const id = this._c.pv, h = this._hass;
     if (!id || !h || this._profBusy) return;
     const k = `corujeira-meteogram:pv:${id}`;
-    if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) this._prof = hit; }
+    // a cached profile arrives after the first advice pass on load, so redo the advice with it
+    if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) { this._prof = hit; if (this._s) this._renderAdvice(); } }
     if (this._prof && Date.now() - this._prof.ts < 6 * 3600e3) return;
     if (this._profTry && Date.now() - this._profTry < 30 * 60e3) return;
     const c = this._coords();

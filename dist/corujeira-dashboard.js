@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.22.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.22.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.22.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.22.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1437,7 +1437,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const id = this._c.pv, h = this._hass;
     if (!id || !h || this._profBusy) return;
     const k = `corujeira-meteogram:pv:${id}`;
-    if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) this._prof = hit; }
+    // a cached profile arrives after the first advice pass on load, so redo the advice with it
+    if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) { this._prof = hit; if (this._s) this._renderAdvice(); } }
     if (this._prof && Date.now() - this._prof.ts < 6 * 3600e3) return;
     if (this._profTry && Date.now() - this._profTry < 30 * 60e3) return;
     const c = this._coords();
