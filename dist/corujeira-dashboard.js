@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.20.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.21.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.20.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.21.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -1229,7 +1229,11 @@ if (!window.customCards.find(c => c.type === "corujeira-hoot-card"))
    advice (land advice lines under the summary, default true; the advice is published either way as the
    window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text, tag }] } for the Hoot card;
    tag is a two-word keyword such as "Frost Thu"), battery (battery charge sensor in %; below battery_low,
-   default 50, one dull day today or tomorrow is enough for a power line, and the charge is quoted), hidden (fetch and publish the advice but draw nothing,
+   default 50, one dull day today or tomorrow is enough for a power line, and the charge is quoted),
+   pv (solar power sensor in W: the card learns the site's solar profile from its hourly statistics over the last
+   profile_days, default 30, against Open-Meteo's past sunshine, hour by hour, so the arrays' tilt and the land's
+   shade are built in; the power advice then judges days by expected kWh and names the hours when the panels
+   should give sun_window_w, default 1000 W, or more), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -1258,6 +1262,7 @@ const WINDY = 50;              // km/h gust (median of models' daily max) worth 
 const MEAN = "#2E8B57", HI_C = "#D9573F", LO_C = "#3D9BC9", WIND_C = "#5E665B", LAND_C = "#2E7D4F";
 // land advice thresholds (all on the median of the models)
 const LAND = { frost: 2, heavyRain: 15, gale: 60, hot: 30, dullFrac: 0.45, dullAbs: 1.2, brightFrac: 0.85, brightMin: 2, dryRun: 4, dryHigh: 30, rainDue: 5,
+  dullPv: 3.5, brightPv: 6,      // expected kWh from the panels for a dull / bright day (with the pv option)
   soak: 20,                      // mm over consecutive wet days (each >= 3 mm) that counts as a soaking rain
   forageFrom: 7, forageTo: 14,   // days after a soaking rain when woodland mushrooms come up
   logRain: 10, farmFrom: 2, farmTo: 5, // open-air shiitake logs fruit a few days after a decent rain (mm)
@@ -1309,9 +1314,31 @@ const publishLand = items => {
   window.dispatchEvent(new CustomEvent("corujeira-land-advice", { detail: d }));
 };
 
+// Site solar profile: watts from the panels per W/m² of sunshine, for each UTC hour (UTC follows the sun, not the
+// clock, so it holds across the clock change). pv and batt are hourly statistics ({ start, mean }), om is Open-Meteo
+// hourly { time (unix s), shortwave_radiation }, whose value at T is the mean of the hour before T. Hours with
+// little sun or a full battery (the chargers throttle back) are left out. Returns 24 factors, or null if too thin.
+const msOf = t => typeof t === "number" ? t : Date.parse(t);
+const siteProfile = (pv, batt, om) => {
+  if (!om || !om.time || !om.shortwave_radiation) return null;
+  const ghi = new Map();
+  om.time.forEach((t, i) => { const v = om.shortwave_radiation[i]; if (v != null) ghi.set(t * 1000 - 3600e3, v); });
+  const full = new Set((batt || []).filter(r => r.mean != null && r.mean >= 97).map(r => msOf(r.start)));
+  const sp = Array(24).fill(0), sg = Array(24).fill(0), n = Array(24).fill(0);
+  let used = 0;
+  for (const r of pv || []) {
+    const s = msOf(r.start), g = ghi.get(s);
+    if (g == null || g < 50 || r.mean == null || full.has(s)) continue;
+    const h = new Date(s).getUTCHours();
+    sp[h] += r.mean; sg[h] += g; n[h]++; used++;
+  }
+  if (used < 48) return null;
+  return sp.map((v, h) => n[h] >= 4 ? Math.round(v / sg[h] * 1000) / 1000 : 0);
+};
+
 class CorujeiraMeteogramCard extends HTMLElement {
   setConfig(c) {
-    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, battery_low: 50, ...c };
+    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, battery_low: 50, sun_window_w: 1000, profile_days: 30, ...c };
     const want = Array.isArray(c.models) ? c.models : MODELS.map(m => m[0]);
     this._models = want.map(id => MODELS.find(m => m[0] === id) || [id, id, "#9AA5B1"]);
     this._hidden = new Set();
@@ -1347,6 +1374,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
       this._loadCache();
       this._maybeFetch(true);
     }
+    this._maybeProfile();
     if (!this._timer && this.isConnected) this._timer = setInterval(() => this._maybeFetch(), 5 * 60e3);
   }
   connectedCallback() {
@@ -1380,6 +1408,39 @@ class CorujeiraMeteogramCard extends HTMLElement {
   _loadCache() {
     const k = this._key(), hit = k && store.get(k);
     if (hit && hit.data) { this._ts = hit.ts; this._past = hit.past || null; this._setData(hit.data); }
+  }
+  // Learn the site profile (see siteProfile) at most every 6 h; cached per sensor for the next load.
+  _maybeProfile() {
+    const id = this._c.pv, h = this._hass;
+    if (!id || !h || this._profBusy) return;
+    const k = `corujeira-meteogram:pv:${id}`;
+    if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) this._prof = hit; }
+    if (this._prof && Date.now() - this._prof.ts < 6 * 3600e3) return;
+    if (this._profTry && Date.now() - this._profTry < 30 * 60e3) return;
+    const c = this._coords();
+    if (!c) return;
+    this._profBusy = true; this._profTry = Date.now();
+    const days = this._c.profile_days, end = new Date(), start = new Date(end - days * 864e5), bid = this._c.battery;
+    const q = new URLSearchParams({ latitude: c[0], longitude: c[1], hourly: "shortwave_radiation",
+      past_days: days, forecast_days: 1, timezone: "GMT", timeformat: "unixtime" });
+    Promise.all([
+      h.callWS({ type: "recorder/statistics_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
+        statistic_ids: bid ? [id, bid] : [id], period: "hour", types: ["mean"] }),
+      fetch(`${API}?${q}`).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+    ]).then(([st, om]) => {
+      const f = siteProfile(st[id], bid ? st[bid] : [], om.hourly);
+      if (!f) return;
+      this._prof = { ts: Date.now(), f };
+      store.set(k, this._prof);
+      if (this._s) this._renderAdvice();
+    }).catch(() => {}).finally(() => { this._profBusy = false; });
+  }
+  // Expected panel output (W) for each forecast slot: slot i is the hour ending at times[i], from the models' median
+  // sunshine times the site factor for that hour. null without a profile.
+  _pvHours() {
+    const s = this._s, f = this._prof && this._prof.f;
+    if (!s || !f || !s.swMed) return null;
+    return s.swMed.map((g, i) => i === 0 || g == null ? null : f[new Date(s.t0 + (i - 1) * 3600e3).getUTCHours()] * g);
   }
   _maybeFetch(force) {
     if (document.visibilityState === "hidden" && !force) return;
@@ -1473,7 +1534,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     });
     const t0 = Date.parse(H.time[0] + ":00Z") - (j.utc_offset_seconds || 0) * 1000;
     const hasWind = wMean.some(v => v != null);
-    this._s = { n, times: H.time, t0, models, mean, lo, hi, rainWet, rainHit, rainN, days, wMean, wLo, wHi, gMed, wDir, hasWind };
+    const swMed = [];
+    for (let i = 0; i < n; i++) swMed.push(median(models.map(m => m.sw[i]).filter(v => v != null)));
+    this._s = { n, times: H.time, t0, models, mean, lo, hi, rainWet, rainHit, rainN, days, wMean, wLo, wHi, gMed, wDir, hasWind, swMed };
     this._render();
   }
 
@@ -1953,35 +2016,66 @@ class CorujeiraMeteogramCard extends HTMLElement {
       add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water", `Pump off ${sday(heavy[0].a)}`);
     }
 
-    // power: two or more dull days in a row, or else a bright stretch worth using. With a battery charge
+    // power: two or more dull days in a row, or else the best sun hours for heavy loads. With a battery charge
     // sensor (option battery: sensor in %, battery_low default 50) a low battery plus one dull day also counts.
     // The air fryer and Instant Pot are the big kitchen loads, so they get named whenever the sun can't refill.
+    // With the pv option days are judged by expected kWh from the panels and the lines name the hours to use.
     const bid = this._c.battery, bs = bid && this._hass && this._hass.states[bid];
     const batt = bs && !isNaN(parseFloat(bs.state)) ? r(parseFloat(bs.state)) : null;
     const battLow = batt != null && batt < this._c.battery_low;
-    const sunVals = days.map(d => d.sun).filter(v => v != null), best = sunVals.length ? Math.max(...sunVals) : 0;
+    const pvH = this._pvHours(), now = Date.now(), t0 = this._s ? this._s.t0 : 0;
+    const kwh = i => { let t = 0, k = 0; for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) if (pvH[h] != null) { t += pvH[h]; k++; } return k >= 18 ? t / 1000 : null; };
+    const sunOf = pvH ? days.map((d, i) => kwh(i)) : days.map(d => d.sun);
+    // the run of hours in day i when the panels should give sun_window_w or more (today: from now on)
+    const sunWin = i => {
+      if (!pvH) return null;
+      let best = null, cur = null;
+      for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) {
+        const w = pvH[h], ok = w != null && w >= this._c.sun_window_w && !(i === 0 && t0 + h * 3600e3 <= now);
+        if (!ok) { cur = null; continue; }
+        if (!cur) cur = { a: h, b: h, e: 0, peak: 0 };
+        cur.b = h; cur.e += w; cur.peak = Math.max(cur.peak, w);
+        if (!best || cur.e > best.e) best = cur;
+      }
+      return best;
+    };
+    const hh = h => `${String(((h % 24) + 24) % 24).padStart(2, "0")}:00`;
+    const live = w => w && t0 + (w.a - 1) * 3600e3 <= now;   // the window has already started
+    const hours = w => live(w) ? `now until ${hh(w.b)}` : `${hh(w.a - 1)} to ${hh(w.b)}`;
+    const dayAt = i => { const w = sunWin(i); return w ? `${name(days[i])}, ${hours(w)}` : name(days[i]); };
+    const sunVals = sunOf.filter(v => v != null), best = sunVals.length ? Math.max(...sunVals) : 0;
+    const absDull = pvH ? LAND.dullPv : LAND.dullAbs, absBright = pvH ? LAND.brightPv : LAND.brightMin;
     if (best > 0) {
-      const isDull = d => d.sun != null && (d.sun < LAND.dullAbs || d.sun < best * LAND.dullFrac);
-      const bright = from => days.findIndex((d, i) => i > from && d.sun != null && d.sun >= best * 0.7);
-      const dull = runs(isDull).filter(x => x.b > x.a);
-      const lowDay = battLow ? [0, 1].find(i => days[i] && isDull(days[i])) : undefined;
+      const isDull = i => sunOf[i] != null && (sunOf[i] < absDull || sunOf[i] < best * LAND.dullFrac);
+      const bright = from => sunOf.findIndex((v, i) => i > from && v != null && v >= best * 0.7);
+      const dull = runs((d, i) => isDull(i)).filter(x => x.b > x.a);
+      const lowDay = battLow ? [0, 1].find(i => days[i] && isDull(i)) : undefined;
       if (dull.length) {
         const u = dull[0], next = bright(u.b);
         const easy = `go easy on the battery${battLow ? ` (at ${batt}%)` : ""}`;
         let tip;
-        if (u.a === 0) tip = next >= 0 ? `Keep the air fryer and Instant Pot off, and save pumping and power tools for ${name(days[next])}.`
+        if (u.a === 0) tip = next >= 0 ? `Keep the air fryer and Instant Pot off, and save pumping and power tools for ${dayAt(next)}.`
           : "Keep the air fryer, Instant Pot and other big loads off where you can.";
         // with a wet spell coming the pump line already says when to pump (before the creek runs muddy)
-        else tip = `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${next >= 0 ? name(days[next]) : "the sun returns"}.`;
+        else tip = `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? dayAt(0) : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${next >= 0 ? dayAt(next) : "the sun returns"}.`;
         add(2, u.a, `Little sun ${span(u.a, u.b)}: ${easy}. ${tip}`, "power", `Low sun ${sday(u.a)}`,
           u.a <= 1 ? "air fryer and Instant Pot off" : `power tools by ${sday(u.a - 1)}`);
       } else if (lowDay !== undefined) {
         const next = bright(lowDay);
-        add(2, lowDay, `Battery at ${batt}% with little sun ${name(days[lowDay])}: keep the air fryer and Instant Pot off until ${next >= 0 ? name(days[next]) : "the sun returns"}.`,
+        add(2, lowDay, `Battery at ${batt}% with little sun ${name(days[lowDay])}: keep the air fryer and Instant Pot off until ${next >= 0 ? dayAt(next) : "the sun returns"}.`,
           "power", `Battery ${batt}%`, "air fryer and Instant Pot off");
-      } else if (best >= LAND.brightMin) {
-        const br = runs(d => d.sun != null && d.sun >= best * LAND.brightFrac).filter(x => x.b > x.a);
-        if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power", `Bright ${sday(br[0].a)}`);
+      } else {
+        const br = best >= absBright ? runs((d, i) => sunOf[i] != null && sunOf[i] >= best * LAND.brightFrac).filter(x => x.b > x.a) : [];
+        const k = sunWin(0) ? 0 : sunWin(1) ? 1 : -1;
+        if (k >= 0) {
+          // the hours to run heavy loads straight off the panels, today if any are left, else tomorrow
+          const w = sunWin(k), b0 = br.find(x => x.a <= k && x.b >= k);
+          const lead = b0 ? `Bright ${span(b0.a, b0.b)}` : `Good sun ${name(days[k])}`;
+          const when = live(w) ? hours(w) : `${b0 && k === 1 ? "tomorrow " : ""}${hh(w.a - 1)} to ${hh(w.b)}`;
+          add(3, k, `${lead}: run the air fryer, Instant Pot, pump and power tools ${when}, when the panels give about ${f1(w.peak / 1000)} kW.`,
+            "power", `Sun ${String((w.a - 1) % 24).padStart(2, "0")}-${String(w.b % 24).padStart(2, "0")}h`,
+            `${live(w) ? "now" : name(days[k])}, for the big loads`);
+        } else if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power", `Bright ${sday(br[0].a)}`);
       }
     }
 
