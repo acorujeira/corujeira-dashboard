@@ -908,7 +908,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (lowest != null) {
       const cap = this._c.battery_kwh, cook = this._battLow(pvH, batt, 2 * this._c.heavy_kwh, this._c.horizon_h);
       const free = lowest - cook < 0.2;
-      if (!free && cook < cap * LAND.battFloor) hold(why, 0);
+      // a mode for the stretch: on while the coming days run the battery under the floor anyway, even at an hour
+      // when a cook would be paid for by spare sun, so it doesn't flicker off at midday and back on at dusk
+      if (lowest < cap * LAND.battFloor || (!free && cook < cap * LAND.battFloor)) hold(why, 0);
     } else if (dullRun) hold(why, dullRun.a);
     else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery ${batt}%`, 0);
 

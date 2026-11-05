@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.26.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.26.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.26.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.26.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2131,7 +2131,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (lowest != null) {
       const cap = this._c.battery_kwh, cook = this._battLow(pvH, batt, 2 * this._c.heavy_kwh, this._c.horizon_h);
       const free = lowest - cook < 0.2;
-      if (!free && cook < cap * LAND.battFloor) hold(why, 0);
+      // a mode for the stretch: on while the coming days run the battery under the floor anyway, even at an hour
+      // when a cook would be paid for by spare sun, so it doesn't flicker off at midday and back on at dusk
+      if (lowest < cap * LAND.battFloor || (!free && cook < cap * LAND.battFloor)) hold(why, 0);
     } else if (dullRun) hold(why, dullRun.a);
     else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery ${batt}%`, 0);
 
