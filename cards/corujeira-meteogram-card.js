@@ -2,13 +2,14 @@
    One thin line per model with the green mean on top, dashed daily high/low trend lines, hourly rain bars
    layered meteoblue-style by how many models agree, wind (mean, model spread, direction arrows) on the rain
    panel's right-hand axis, a per-day row (high, low, rain amount and chance), a written forecast, up to four
-   green "land" advice lines (frost, heavy rain, gales, heat, low sun / battery, watering, planting windows,
+   green "land" advice lines (frost, heavy rain, gales, heat, low sun / battery (names the air fryer and Instant Pot), watering, planting windows,
    woodland foraging and the shiitake logs; thresholds in LAND), daylight bands, 3/5/7 day pills, and thumb
    scrubbing. At WIDE_MIN px and wider the two charts sit side by side under the summary and advice.
    Options: show_models (legend of models, default true), navigate (title opens e.g. "#weather"),
    advice (land advice lines under the summary, default true; the advice is published either way as the
    window event "corujeira-land-advice" with { ts, items: [{ pri, kind, text, tag }] } for the Hoot card;
-   tag is a two-word keyword such as "Frost Thu"), hidden (fetch and publish the advice but draw nothing,
+   tag is a two-word keyword such as "Frost Thu"), battery (battery charge sensor in %; below battery_low,
+   default 50, one dull day today or tomorrow is enough for a power line, and the charge is quoted), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -90,7 +91,7 @@ const publishLand = items => {
 
 class CorujeiraMeteogramCard extends HTMLElement {
   setConfig(c) {
-    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, ...c };
+    this._c = { days: 7, refresh_minutes: 30, title: "Meteogram", show_models: true, advice: true, silo_low: 40, battery_low: 50, ...c };
     const want = Array.isArray(c.models) ? c.models : MODELS.map(m => m[0]);
     this._models = want.map(id => MODELS.find(m => m[0] === id) || [id, id, "#9AA5B1"]);
     this._hidden = new Set();
@@ -118,7 +119,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     if (this._c.compact && this._s && prevH && [this._c.current, this._c.uv].some(id => id && prevH.states[id] !== h.states[id])) this._render();
     // the silo level feeds the pump advice; refresh just the advice when it changes
     const sv = this._c.silo && h.states[this._c.silo] ? h.states[this._c.silo].state : null;
-    if (sv !== this._siloV) { this._siloV = sv; if (this._s) this._renderAdvice(); }
+    // the battery charge feeds the power advice; refresh when its whole percent changes
+    const bv = this._c.battery && h.states[this._c.battery] ? Math.round(parseFloat(h.states[this._c.battery].state)) : null;
+    if (sv !== this._siloV || bv !== this._battV) { this._siloV = sv; this._battV = bv; if (this._s) this._renderAdvice(); }
     if (!this._started) {
       this._started = true;
       this._loadCache();
@@ -730,16 +733,32 @@ class CorujeiraMeteogramCard extends HTMLElement {
       add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water", `Pump off ${sday(heavy[0].a)}`);
     }
 
-    // power: two or more dull days in a row, or else a bright stretch worth using
+    // power: two or more dull days in a row, or else a bright stretch worth using. With a battery charge
+    // sensor (option battery: sensor in %, battery_low default 50) a low battery plus one dull day also counts.
+    // The air fryer and Instant Pot are the big kitchen loads, so they get named whenever the sun can't refill.
+    const bid = this._c.battery, bs = bid && this._hass && this._hass.states[bid];
+    const batt = bs && !isNaN(parseFloat(bs.state)) ? r(parseFloat(bs.state)) : null;
+    const battLow = batt != null && batt < this._c.battery_low;
     const sunVals = days.map(d => d.sun).filter(v => v != null), best = sunVals.length ? Math.max(...sunVals) : 0;
     if (best > 0) {
-      const dull = runs(d => d.sun != null && (d.sun < LAND.dullAbs || d.sun < best * LAND.dullFrac)).filter(x => x.b > x.a);
+      const isDull = d => d.sun != null && (d.sun < LAND.dullAbs || d.sun < best * LAND.dullFrac);
+      const bright = from => days.findIndex((d, i) => i > from && d.sun != null && d.sun >= best * 0.7);
+      const dull = runs(isDull).filter(x => x.b > x.a);
+      const lowDay = battLow ? [0, 1].find(i => days[i] && isDull(days[i])) : undefined;
       if (dull.length) {
-        const u = dull[0], next = days.findIndex((d, i) => i > u.b && d.sun != null && d.sun >= best * 0.7);
+        const u = dull[0], next = bright(u.b);
+        const easy = `go easy on the battery${battLow ? ` (at ${batt}%)` : ""}`;
+        let tip;
+        if (u.a === 0) tip = next >= 0 ? `Keep the air fryer and Instant Pot off, and save pumping and power tools for ${name(days[next])}.`
+          : "Keep the air fryer, Instant Pot and other big loads off where you can.";
         // with a wet spell coming the pump line already says when to pump (before the creek runs muddy)
-        const tip = u.a > 0 ? `run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}`
-          : next >= 0 ? `save pumping and power tools for ${name(days[next])}` : "keep big loads to a minimum";
-        add(2, u.a, `Little sun ${span(u.a, u.b)}: go easy on the battery, ${tip}.`, "power", `Low sun ${sday(u.a)}`);
+        else tip = `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${next >= 0 ? name(days[next]) : "the sun returns"}.`;
+        add(2, u.a, `Little sun ${span(u.a, u.b)}: ${easy}. ${tip}`, "power", `Low sun ${sday(u.a)}`,
+          u.a <= 1 ? "air fryer and Instant Pot off" : `power tools by ${sday(u.a - 1)}`);
+      } else if (lowDay !== undefined) {
+        const next = bright(lowDay);
+        add(2, lowDay, `Battery at ${batt}% with little sun ${name(days[lowDay])}: keep the air fryer and Instant Pot off until ${next >= 0 ? name(days[next]) : "the sun returns"}.`,
+          "power", `Battery ${batt}%`, "air fryer and Instant Pot off");
       } else if (best >= LAND.brightMin) {
         const br = runs(d => d.sun != null && d.sun >= best * LAND.brightFrac).filter(x => x.b > x.a);
         if (br.length) add(3, br[0].a, `Bright ${span(br[0].a, br[0].b)}: good days for pumping, power tools and charging.`, "power", `Bright ${sday(br[0].a)}`);
