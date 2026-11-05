@@ -13,7 +13,8 @@
    pv (solar power sensor in W: the card learns the site's solar profile from its hourly statistics over the last
    profile_days, default 30, against Open-Meteo's past sunshine, hour by hour, so the arrays' tilt and the land's
    shade are built in; the power advice then judges days by expected kWh and names the hours when the panels
-   should give sun_window_w, default 1000 W, or more), hidden (fetch and publish the advice but draw nothing,
+   should give sun_window_w, default 1000 W, or more; the hourly outlook is also published as window.__corujeiraSolar,
+   localStorage "corujeira-solar" and the event "corujeira-solar" for the energy charts), hidden (fetch and publish the advice but draw nothing,
    for a screen that shows the forecast only in a pop-up), wide_chart_height (chart height when side by side, default 300), chart_height (height of each chart panel in px,
    default 200; a big pop-up can use more), compact (a weather tile instead of the charts: now
    from `current` (a weather entity) with humidity, wind and `uv` (sensor), the written forecast, and a strip
@@ -114,6 +115,28 @@ const siteProfile = (pv, batt, om) => {
   }
   if (used < 48) return null;
   return sp.map((v, h) => n[h] >= 4 ? Math.round(v / sg[h] * 1000) / 1000 : 0);
+};
+
+// Expected kWh for day i from hourly expected watts (slot h is the hour ending at forecast hour h); null if thin.
+const dayKwh = (pvH, i) => { let t = 0, k = 0; for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) if (pvH[h] != null) { t += pvH[h]; k++; } return k >= 18 ? t / 1000 : null; };
+// The run of hours in day i with at least minW expected (slots ending at or before `after` are skipped), by energy.
+const sunWindow = (pvH, i, minW, t0, after) => {
+  let best = null, cur = null;
+  for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) {
+    const w = pvH[h], ok = w != null && w >= minW && !(after && t0 + h * 3600e3 <= after);
+    if (!ok) { cur = null; continue; }
+    if (!cur) cur = { a: h, b: h, e: 0, peak: 0 };
+    cur.b = h; cur.e += w; cur.peak = Math.max(cur.peak, w);
+    if (!best || cur.e > best.e) best = cur;
+  }
+  return best;
+};
+// The solar outlook goes out like the land advice (event, window global, localStorage) for the energy charts:
+// { ts, hours: [[slot start ms, expected W, model quartile low W, high W]], days: [{ date, kwh, win: [from, to, peak W] }] }
+const publishSolar = d => {
+  window.__corujeiraSolar = d;
+  store.set("corujeira-solar", d);
+  window.dispatchEvent(new CustomEvent("corujeira-solar", { detail: d }));
 };
 
 class CorujeiraMeteogramCard extends HTMLElement {
@@ -221,6 +244,23 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const s = this._s, f = this._prof && this._prof.f;
     if (!s || !f || !s.swMed) return null;
     return s.swMed.map((g, i) => i === 0 || g == null ? null : f[new Date(s.t0 + (i - 1) * 3600e3).getUTCHours()] * g);
+  }
+  _solar() {
+    const s = this._s, f = this._prof && this._prof.f, pvH = this._pvHours();
+    if (!pvH) return null;
+    const q = (a, p) => { const b = a.filter(v => v != null).sort((x, y) => x - y); if (!b.length) return 0; const k = (b.length - 1) * p, i = Math.floor(k); return b[i] + ((b[i + 1] ?? b[i]) - b[i]) * (k - i); };
+    const hours = [];
+    for (let i = 1; i < s.n; i++) {
+      const t = s.t0 + (i - 1) * 3600e3, fk = f[new Date(t).getUTCHours()];
+      const per = s.models.map(m => m.sw[i] == null ? null : m.sw[i] * fk);
+      hours.push([t, Math.round(pvH[i] || 0), Math.round(q(per, 0.25)), Math.round(q(per, 0.75))]);
+    }
+    const days = s.days.map((d, i) => {
+      const w = sunWindow(pvH, i, this._c.sun_window_w, s.t0, 0), k = dayKwh(pvH, i);
+      return { date: d.date, kwh: k == null ? null : Math.round(k * 10) / 10,
+        win: w ? [s.t0 + (w.a - 1) * 3600e3, s.t0 + w.b * 3600e3, Math.round(w.peak)] : null };
+    });
+    return { ts: Date.now(), min_w: this._c.sun_window_w, hours, days };
   }
   _maybeFetch(force) {
     if (document.visibilityState === "hidden" && !force) return;
@@ -491,6 +531,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
     if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail }) => ({ pri, kind, text, tag, detail })));
+    const sol = this._s && this._solar();
+    if (sol) publishSolar(sol);
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
       `<div class="tipline"><ha-icon icon="mdi:sprout-outline"></ha-icon><span>${esc(x.text)}</span></div>`).join("");
   }
@@ -804,21 +846,9 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const batt = bs && !isNaN(parseFloat(bs.state)) ? r(parseFloat(bs.state)) : null;
     const battLow = batt != null && batt < this._c.battery_low;
     const pvH = this._pvHours(), now = Date.now(), t0 = this._s ? this._s.t0 : 0;
-    const kwh = i => { let t = 0, k = 0; for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) if (pvH[h] != null) { t += pvH[h]; k++; } return k >= 18 ? t / 1000 : null; };
-    const sunOf = pvH ? days.map((d, i) => kwh(i)) : days.map(d => d.sun);
+    const sunOf = pvH ? days.map((d, i) => dayKwh(pvH, i)) : days.map(d => d.sun);
     // the run of hours in day i when the panels should give sun_window_w or more (today: from now on)
-    const sunWin = i => {
-      if (!pvH) return null;
-      let best = null, cur = null;
-      for (let h = i * 24 + 1; h <= i * 24 + 24 && h < pvH.length; h++) {
-        const w = pvH[h], ok = w != null && w >= this._c.sun_window_w && !(i === 0 && t0 + h * 3600e3 <= now);
-        if (!ok) { cur = null; continue; }
-        if (!cur) cur = { a: h, b: h, e: 0, peak: 0 };
-        cur.b = h; cur.e += w; cur.peak = Math.max(cur.peak, w);
-        if (!best || cur.e > best.e) best = cur;
-      }
-      return best;
-    };
+    const sunWin = i => pvH ? sunWindow(pvH, i, this._c.sun_window_w, t0, i === 0 ? now : 0) : null;
     const hh = h => `${String(((h % 24) + 24) % 24).padStart(2, "0")}:00`;
     const live = w => w && t0 + (w.a - 1) * 3600e3 <= now;   // the window has already started
     const hours = w => live(w) ? `now until ${hh(w.b)}` : `${hh(w.a - 1)} to ${hh(w.b)}`;
