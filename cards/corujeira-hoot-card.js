@@ -5,7 +5,7 @@
    Options: speaker ("hoot" or "nimbu", default hoot), swap (tap the speaker to swap between Hoot and Nimbu,
    remembered per device; default on unless navigate is set), title / subtitle (override the configured
    speaker's name, defaults "Hoot" / "Land wizard" and "Nimbu" / "Land cat"), max (lines shown, default 6),
-   fire (fire lines, default true), burn_window (low-risk work window nudge May to Oct, default true),
+   fire (fire lines: a fire inside Vigia's alert zone, or risk high or above today or tomorrow; default true),
    fire_risk / fire_risk_tomorrow / alert_level / fires_nearby (entity ids, default Vigia's),
    colors (per kind: mushroom, plant, fire, frost, rain, wind, heat, power, water),
    navigate (tapping Hoot opens e.g. "#weather"), stale_hours (drop weather advice older than this, default 18),
@@ -16,9 +16,11 @@
    nearest_fire (sensor with distance and direction for the heat spot detail, default Vigia's).
    Needs a corujeira-meteogram-card somewhere in the dashboard (advice: false hides its own lines). */
 (() => {
+// one colour per element, used for the icon and the bold lead: land green, sun and power orange, fire red,
+// water blue, frost ice blue, wind grey
 const KINDS = {
-  mushroom: "#A0673A", plant: "#2E7D4F", fire: "#D9772B", frost: "#3D9BC9", rain: "#2A6FB0",
-  wind: "#5E665B", heat: "#D9573F", power: "#B98A16", water: "#2F8F9D",
+  mushroom: "#5E8A3A", plant: "#2E7D4F", fire: "#D23B2E", frost: "#4AA3D6", rain: "#2A72C2",
+  wind: "#6B7268", heat: "#E0602A", power: "#E08A1E", water: "#2A72C2",
 };
 // 24px line icons drawn with currentColor, so a colour on the wrapper recolours them
 const ICON = {
@@ -107,7 +109,7 @@ const SPEAKERS = {
 const RISK = { 1: "low", 2: "moderate", 3: "high", 4: "very high", 5: "maximum" };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 // the lead phrase (up to the first colon, or the first sentence) in bold so the lines scan
-const lead = t => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); return m ? `<b>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
+const lead = (t, col) => { const m = String(t).match(/^(.{4,70}?[:.])(\s.*)$/s); const st = col ? ` style="color:${esc(col)}"` : ""; return m ? `<b${st}>${esc(m[1])}</b>${esc(m[2])}` : esc(t); };
 // a keyword for compact mode when a line carries no tag: the lead phrase, cut to three words
 const shortTag = t => String(t).split(/[:.(]/)[0].split(/\s+/).slice(0, 3).join(" ");
 // a few words of detail for compact mode: the line's own detail, or the first clause after its lead phrase
@@ -272,55 +274,29 @@ class CorujeiraHootCard extends HTMLElement {
     clearTimeout(this._talk); this._talk = setTimeout(() => cat.classList.remove("talk"), 1500);
   }
 
-  // Fire lines from Vigia: an active alert first, then today's or tomorrow's risk, then a low-risk window for spark work.
+  // Fire lines from Vigia: a fire inside the alert zone, and fire risk high or above. Quiet otherwise.
   _fire() {
     const h = this._hass, c = this._c, out = [];
     if (!h || !c.fire) return out;
     const st = id => h.states[id], num = id => { const s = st(id); const v = s ? parseFloat(s.state) : NaN; return isNaN(v) ? null : v; };
     // The speaker keeps watch in its own voice.
-    const watch = this._who === "nimbu" ? "I'll keep sniffing the wind." : "I'll keep an eye on the hills.";
+    const watch = this._who === "nimbu" ? "I'm sniffing the wind." : "I'm watching the hills.";
+    // Only what matters: a fire inside Vigia's alert zone, or fire risk high or above today or tomorrow.
     const al = st(c.alert_level);
     if (al && ["watch", "upwind", "close"].includes(al.state)) {
       const a = al.attributes, km = a.distance_km != null ? `${Math.round(a.distance_km)} km` : "nearby";
       const where = `${km}${a.direction ? " " + a.direction : ""}${a.upwind ? ", upwind" : ""}`;
-      const what = al.state === "close" ? "Fill the buckets, keep the hoses ready, and have the go-bag by the car."
-        : al.state === "upwind" ? "Smoke may reach us. Close the yurt, keep an eye on the sky and the Vigia map." : watch;
-      out.push({ pri: 0, kind: "fire", text: `Fire ${where}. ${what}`, tag: `Fire ${km}${a.direction ? " " + a.direction : ""}` });
-    } else {
-      const n = num(c.fires_nearby);
-      if (n) {
-        const a = st(c.fires_nearby).attributes, R = Math.round(a.radius_km || 30);
-        const inc = a.incidents || 0, heat = a.heat_spots != null ? a.heat_spots : Math.max(0, n - inc);
-        const bits = [];
-        if (inc) bits.push(`${inc === 1 ? "A reported fire" : inc + " reported fires"}`);
-        if (heat) bits.push(`${heat === 1 ? "a satellite heat spot" : heat + " satellite heat spots"}`);
-        let text = `${bits.join(" and ")} within ${R} km.`;
-        text = text[0].toUpperCase() + text.slice(1);
-        out.push({ pri: 2, kind: "fire", text: inc ? `${text} ${watch}`
-          : `${text} None reported to civil protection yet. ${watch}`,
-          tag: inc ? (inc === 1 ? "Fire reported" : `${inc} fires reported`) : heat === 1 ? "Heat spot" : `${heat} heat spots`,
-          detail: (() => {
-            const nf = st(c.nearest_fire), km = nf ? parseFloat(nf.state) : NaN, na = (nf && nf.attributes) || {};
-            const where = !isNaN(km) ? `nearest ${Math.round(km)} km${na.direction ? " " + na.direction : ""}${na.upwind ? ", upwind" : ""}` : `within ${R} km`;
-            return inc ? where : `${where}, none reported`;
-          })() });
-      }
+      const what = al.state === "close" ? "fill buckets, hoses ready, go-bag by the car."
+        : al.state === "upwind" ? "smoke may reach us, close the yurt." : watch;
+      out.push({ pri: 0, kind: "fire", text: `Fire ${where}: ${what}`, tag: `Fire ${km}${a.direction ? " " + a.direction : ""}` });
     }
     const r0 = num(c.fire_risk), r1 = num(c.fire_risk_tomorrow), top = Math.max(r0 || 0, r1 || 0);
     if (top >= 3) {
       const day = (r0 || 0) >= top ? "today" : "tomorrow";
       out.push({ pri: top >= 4 ? 1 : 2, kind: "fire", text: top >= 4
-        ? `Fire risk ${RISK[top]} ${day}: no burning and no sparks outdoors (grinders, chainsaws, mowing dry grass). Keep the hose ready.`
-        : `Fire risk ${RISK[top]} ${day}: no burning, and keep spark-making tools away from dry grass.`,
+        ? `Fire risk ${RISK[top]} ${day}: no sparks or burning outdoors.`
+        : `Fire risk high ${day}: keep sparks off dry grass.`,
         tag: `Fire risk ${RISK[top]}${day === "tomorrow" ? " tomorrow" : ""}` });
-    } else if (c.burn_window && r0 != null && r0 <= 2 && (r1 == null || r1 <= 2)) {
-      const m = new Date().getMonth() + 1;
-      // Only in the dry months, when a calm day is worth noticing; in winter the risk is nearly always low.
-      if (m >= 5 && m <= 10) out.push({ pri: 3, kind: "fire", text: r0 <= 1
-        ? "Fire risk low: a good window for grinding, welding and chainsaw work, or a fire in the sauna and fire pit."
-        : "Fire risk moderate: fine for the sauna and fire pit, and spark work with a hose near any dry grass.",
-        tag: r0 <= 1 ? "Spark work OK" : "Fire risk moderate",
-        detail: r0 <= 1 ? "good for grinding, welding, the sauna" : "fine for the sauna and fire pit" });
     }
     return out;
   }
@@ -349,7 +325,7 @@ class CorujeiraHootCard extends HTMLElement {
       }).join("") : `<li class="quiet">${esc(!land ? sp.wait : sp.quiet)}</li>`;
     } else ul.innerHTML = shown.map(x => {
       const col = this._colors[x.kind] || this._colors.plant;
-      return `<li><span class="ic" style="color:${esc(col)};background:color-mix(in srgb, ${esc(col)} 13%, transparent)">${icon(x.kind)}</span><span>${lead(x.text)}</span></li>`;
+      return `<li><span class="ic" style="color:${esc(col)};background:color-mix(in srgb, ${esc(col)} 13%, transparent)">${icon(x.kind)}</span><span>${lead(x.text, col)}</span></li>`;
     }).join("");
     const more = this.shadowRoot.querySelector(".more");
     more.hidden = all.length <= max;

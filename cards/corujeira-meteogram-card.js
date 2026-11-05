@@ -827,18 +827,20 @@ class CorujeiraMeteogramCard extends HTMLElement {
     };
     const wet = d => d.p >= 0.6 && d.amt >= WET_DAY;
     const peak = (run, key) => r(Math.max(...days.slice(run.a, run.b + 1).map(d => d[key])));
+    // lines are kept short: a coloured lead (what and when), then a few words of what to do
+    const ss = (a, b) => a === b ? sday(a) : `${sday(a)} to ${sday(b)}`, up = t => t.replace(/^./, c => c.toUpperCase());
 
     // urgent: frost, heavy rain, gales, heat
     const fi = days.findIndex(d => d.low != null && d.low <= LAND.frost);
     if (fi >= 0) {
       const l = r(days[fi].low);
-      add(1, fi, l <= 0 ? `Frost likely early ${name(days[fi])} (${l}°): cover seedlings and bring tender pots in.`
-        : `Near frost early ${name(days[fi])} (${l}°): fleece the seedlings.`, "frost", `Frost ${sday(fi)}`);
+      add(1, fi, l <= 0 ? `Frost ${sday(fi)}: ${l}°, cover seedlings, pots in.`
+        : `Near frost ${sday(fi)}: ${l}°, fleece seedlings.`, "frost", `Frost ${sday(fi)}`);
     }
     const heavy = runs(d => wet(d) && d.amt >= LAND.heavyRain);
     // expected rain per day (amount × share of models), the same figure the summary uses
     const exp = d => d.p >= 0.3 ? d.amt * d.p : 0, month = today.getMonth() + 1;
-    const chores = `${month >= 9 && month <= 11 ? "clear the gutters, " : ""}tarp timber and tools, cover the compost`;
+    const chores = month >= 9 && month <= 11 ? "clear gutters, tarp timber" : "tarp timber, cover compost";
     // wet spell: 3+ days in a row with real rain (>= 3 mm expected) adding up to a soaking. It is the
     // big picture, so it takes the place of a separate heavy-rain line for the days inside it.
     const spell = runs(d => exp(d) >= 3).find(x => x.b - x.a >= 2 && days.slice(x.a, x.b + 1).reduce((t, d) => t + exp(d), 0) >= LAND.soak);
@@ -850,23 +852,20 @@ class CorujeiraMeteogramCard extends HTMLElement {
       const before = [...(past && past.precipitation_sum ? past.precipitation_sum.slice(0, -1) : []), ...days.slice(0, spell.a).map(exp)];
       let dry = 0;
       for (let i = before.length - 1; i >= 0 && (before[i] || 0) < 1; i--) dry++;
-      const lead = dry >= 7 ? `Dry spell ends ${name(days[spell.a])}` : `Wet spell from ${name(days[spell.a])}`;
-      const runTo = spell.b > spell.a ? ` ${spell.a === 0 ? "from today" : "from then"} to ${name(days[spell.b])}` : "";
-      const rest = `${heavyIn ? `, heaviest ${span(heavyIn.a, heavyIn.b)}` : ""}${open ? ", and still wet where the forecast ends" : ""}`;
-      const todo = spell.a > 0 ? `Before then, ${chores}.` : `${chores.replace(/^./, c => c.toUpperCase())}.`;
-      add(1, spell.a, `${lead}: about ${mm} mm of rain${runTo}${rest}. ${todo}`, "rain",
+      const lead = spell.b > spell.a ? `Rain ${ss(spell.a, spell.b)}${open ? "+" : ""}` : `Rain ${sday(spell.a)}`;
+      add(1, spell.a, `${lead}: ~${mm} mm. ${up(chores)}.`, "rain",
         dry >= 7 ? `Rain from ${sday(spell.a)}` : `Wet from ${sday(spell.a)}`, `about ${mm} mm${open ? ", no end in sight" : ""}`);
     }
     for (const h of heavy) {
       if (h === heavyIn) continue;
       const mm = r(days.slice(h.a, h.b + 1).reduce((t, d) => t + exp(d), 0));
-      add(1, h.a, `Heavy rain ${span(h.a, h.b)} (about ${mm} mm): ${chores}.`, "rain", `Heavy rain ${sday(h.a)}`);
+      add(1, h.a, `Heavy rain ${ss(h.a, h.b)}: ~${mm} mm. ${up(chores)}.`, "rain", `Heavy rain ${sday(h.a)}`);
       break;
     }
     const gale = runs(d => d.gust != null && d.gust >= LAND.gale);
-    if (gale.length) add(1, gale[0].a, `Strong gusts ${span(gale[0].a, gale[0].b)} (to ${peak(gale[0], "gust")} km/h): tie down tarps, the yurt cover and anything loose.`, "wind", `Gusts ${sday(gale[0].a)}`);
+    if (gale.length) add(1, gale[0].a, `Gusts ${ss(gale[0].a, gale[0].b)}: to ${peak(gale[0], "gust")} km/h, tie down tarps.`, "wind", `Gusts ${sday(gale[0].a)}`);
     const hot = runs(d => d.high != null && d.high >= LAND.hot);
-    if (hot.length) add(1, hot[0].a, `Hot ${span(hot[0].a, hot[0].b)} (up to ${peak(hot[0], "high")}°): water early in the morning and shade young plants.`, "heat", `Hot ${sday(hot[0].a)}`);
+    if (hot.length) add(1, hot[0].a, `Hot ${ss(hot[0].a, hot[0].b)}: to ${peak(hot[0], "high")}°, water early, shade seedlings.`, "heat", `Hot ${sday(hot[0].a)}`);
 
     // pump: the creek runs muddy in and after heavy rain, so pump before rain or once the creek runs clear.
     // With a silo level sensor (option silo: sensor entity in %, silo_low default 40) a low silo gets its own line.
@@ -875,15 +874,15 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const rainSoon = days.findIndex((d, i) => i <= 2 && wet(d) && d.amt * d.p >= LAND.rainDue);
     if (silo != null && silo < this._c.silo_low) {
       const lvl = `Silo at ${r(silo)}%`;
-      if (rainSoon === 0) add(1, 0, `${lvl} and rain today: hold the pump until the creek runs clear, then top up.`, "water", lvl);
-      else if (rainSoon > 0) add(1, 0, `${lvl} with rain due ${name(days[rainSoon])}: pump before then, or wait until the creek runs clear after.`, "water", lvl);
-      else add(2, 0, `${lvl}: run the pump once you've checked the creek is running clear.`, "water", lvl);
+      if (rainSoon === 0) add(1, 0, `${lvl}: pump once the creek clears.`, "water", lvl);
+      else if (rainSoon > 0) add(1, 0, `${lvl}: pump before ${sday(rainSoon)}'s rain.`, "water", lvl);
+      else add(2, 0, `${lvl}: pump if the creek runs clear.`, "water", lvl);
     } else if (spell) {
-      add(2, spell.a, spell.a > 0 ? `Pump: top up the silo before ${name(days[spell.a])}, then keep it off until the creek runs clear after the rain.`
-        : `Pump: keep it off through the rain, then check the creek runs clear before pumping again.`, "water",
+      add(2, spell.a, spell.a > 0 ? `Pump ${spell.a === 1 ? "today" : "by " + sday(spell.a - 1)}: top up before the creek runs muddy.`
+        : `Pump off: creek muddy in the rain.`, "water",
         spell.a > 0 ? `Pump by ${sday(spell.a - 1)}` : "Pump off");
     } else if (heavy.length) {
-      add(2, heavy[0].a, `Pump: keep it off in the heavy rain ${span(heavy[0].a, heavy[0].b)}, then check the creek runs clear before pumping again.`, "water", `Pump off ${sday(heavy[0].a)}`);
+      add(2, heavy[0].a, `Pump off ${ss(heavy[0].a, heavy[0].b)}: creek muddy in heavy rain.`, "water", `Pump off ${sday(heavy[0].a)}`);
     }
 
     // power: whether the sun ahead is spare or needed to keep the battery up. With battery (charge %), battery_kwh,
@@ -900,33 +899,35 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const absDull = pvH ? LAND.dullPv : LAND.dullAbs;
     const isDull = i => sunOf[i] != null && (sunOf[i] < absDull || sunOf[i] < best * LAND.dullFrac);
     const dullRun = best > 0 ? runs((d, i) => isDull(i)).find(x => x.b > x.a && x.a <= 2) : null;
-    const hold = (why, at) => add(2, at, `Hold off on the air fryer and Instant Pot: ${why}.`, "power", "Save battery", "no air fryer or Instant Pot");
-    const why = dullRun ? `little sun ${dullRun.a === 0 ? "until" : "from " + name(days[dullRun.a]) + " to"} ${name(days[dullRun.b])}` : null;
+    // "power saving" means: no air fryer or Instant Pot until the sun comes back
+    const until = dullRun ? ` until ${sday(dullRun.b)}` : "";
+    const hold = (why, at) => add(2, at, `Power saving${until}: no air fryer or Instant Pot${why ? ", " + why : ""}.`, "power", "Power saving", "no air fryer or Instant Pot");
+    const why = null;
     const lowest = this._battLow(pvH, batt, 0, this._c.horizon_h);
     if (lowest != null) {
       const cap = this._c.battery_kwh, cook = this._battLow(pvH, batt, 2 * this._c.heavy_kwh, this._c.horizon_h);
       const free = lowest - cook < 0.2;
-      if (!free && cook < cap * LAND.battFloor) hold(why || "let the sun fill the battery", 0);
+      if (!free && cook < cap * LAND.battFloor) hold(why, 0);
     } else if (dullRun) hold(why, dullRun.a);
-    else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery at ${batt}%`, 0);
+    else if (batt != null && batt < this._c.battery_low && [0, 1].some(i => days[i] && isDull(i))) hold(`battery ${batt}%`, 0);
 
     // water: a dry, warm spell starting soon, or rain on its way
     const dry = runs(d => d.n && d.p < 0.3 && d.high != null && d.high >= LAND.dryHigh).filter(x => x.b - x.a + 1 >= LAND.dryRun);
     if (dry.length && dry[0].a <= 2) {
       const d0 = dry[0], scorching = days.slice(d0.a, d0.b + 1).some(d => d.high >= 28);
-      add(2, d0.a, hot.length ? `Dry ${span(d0.a, d0.b)}: mulch bare soil and keep the silo topped up.`
-        : `Dry and warm ${span(d0.a, d0.b)}: water seedlings in the ${scorching ? "early morning" : "evening"} and mulch bare soil.`, "plant", "Dry spell");
+      add(2, d0.a, hot.length ? `Dry ${ss(d0.a, d0.b)}: mulch, keep the silo topped up.`
+        : `Dry ${ss(d0.a, d0.b)}: water seedlings ${scorching ? "early" : "evenings"}, mulch.`, "plant", "Dry spell");
     }
     if (!heavy.length && !spell) {
       const ri = days.findIndex((d, i) => i <= 2 && wet(d) && d.amt * d.p >= LAND.rainDue);
-      if (ri >= 0) add(3, ri, `Rain due ${name(days[ri])} (about ${r(days[ri].amt * days[ri].p)} mm): hold off watering.`, "rain", `Rain ${sday(ri)}`, `about ${r(days[ri].amt * days[ri].p)} mm, hold off watering`);
+      if (ri >= 0) add(3, ri, `Rain ${sday(ri)}: ~${r(days[ri].amt * days[ri].p)} mm, skip watering.`, "rain", `Rain ${sday(ri)}`, `~${r(days[ri].amt * days[ri].p)} mm, skip watering`);
     }
 
     // soil: a mild, dry day straight after rain is a planting window
     for (let i = 1; i < days.length; i++) {
       const prev = days[i - 1], d = days[i];
       if (wet(prev) && d.p < 0.3 && d.high != null && d.high >= 12 && d.high <= 24 && d.low != null && d.low >= 5) {
-        add(3, i, `Moist soil after ${name(prev)}'s rain: ${name(d)} is a good day to plant out or sow.`, "plant", `Plant ${sday(i)}`, `moist soil after ${name(prev)}'s rain`);
+        add(3, i, `Plant ${sday(i)}: moist soil after the rain.`, "plant", `Plant ${sday(i)}`, "moist soil after rain");
         break;
       }
     }
@@ -964,19 +965,19 @@ class CorujeiraMeteogramCard extends HTMLElement {
       for (const e of [...soaked].reverse()) {
         const w = windowIn(e, LAND.forageFrom, LAND.forageTo);
         if (!w) continue;
-        add(2, w.a, `Foraging ${span(w.a, w.b)}, a week or two after ${rainLabel(e)}: porcini and chanterelles under oak and chestnut, parasols in clearings, saffron milk caps under pine. Pick only what you know for certain.`, "mushroom", w.a === 0 ? "Foraging" : `Foraging ${sday(w.a)}`);
+        add(2, w.a, `Foraging ${ss(w.a, w.b)}: porcini, chanterelles, parasols. Only what you know.`, "mushroom", w.a === 0 ? "Foraging" : `Foraging ${sday(w.a)}`);
         done = true;
         break;
       }
       const ahead = soaked.find(e => e.start >= 0 && e.end + LAND.forageFrom > days.length - 1);
-      if (!done && ahead) add(3, ahead.start, `${rainLabel(ahead).replace(/^./, c => c.toUpperCase())} (about ${r(ahead.mm)} mm${ahead.start !== ahead.end ? " in all" : ""}) should bring woodland mushrooms up from around ${when(ahead.end + LAND.forageFrom)}${ahead.end === days.length - 1 ? `, if it eases after ${name(days[ahead.end])}` : ""}.`, "mushroom", "Mushrooms soon");
+      if (!done && ahead) add(3, ahead.start, `Mushrooms from ~${when(ahead.end + LAND.forageFrom)}: after this rain${ahead.end === days.length - 1 ? ", if it eases" : ""}.`, "mushroom", "Mushrooms soon");
     }
     // shiitake logs (open air, rain-fed): expect fruiting a few days after a decent rain
     for (const e of [...soaks].reverse()) {
       if (e.mm < LAND.logRain) continue;
       const w = windowIn(e, LAND.farmFrom, LAND.farmTo);
       if (!w) continue;
-      add(2, w.a, `Shiitake logs: likely fruiting ${span(w.a, w.b)}, a few days after ${rainLabel(e)}. Pick while the caps are still curled under.`, "mushroom", w.a === 0 ? "Shiitake" : `Shiitake ${sday(w.a)}`);
+      add(2, w.a, `Shiitake ${ss(w.a, w.b)}: pick while caps curl under.`, "mushroom", w.a === 0 ? "Shiitake" : `Shiitake ${sday(w.a)}`);
       break;
     }
     return out.sort((x, y) => x.pri - y.pri || x.at - y.at);
