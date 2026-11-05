@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.25.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.26.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.25.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.26.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -889,6 +889,8 @@ const ICON = {
   power: `<path d="M13.2 2.5 5 13.5h6.2l-1.4 8L18.5 10h-6.3z"/>`,
   water: `<path d="M5 8.5h9.5a3.5 3.5 0 0 1 0 7H13"/><path d="M5 5.5v6"/><path d="M13 15.5c1.2 1.6 2 2.7 2 3.6a2 2 0 0 1-4 0c0-.9.8-2 2-3.6z"/>`,
 };
+// battery running low, for the power saving banner and the badge on the speaker
+const BATT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="7" width="16.5" height="10" rx="2.2"/><path d="M21.5 10.5v3"/><rect x="5" y="9.5" width="3.5" height="5" rx=".6" fill="currentColor" stroke="none"/></svg>`;
 const icon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[k] || ICON.plant}</svg>`;
 // Hoot: round owl, cream face and belly, a green wizard's hat with a gold star
 const OWL = `<svg class="owl" viewBox="0 0 64 74" aria-hidden="true">
@@ -1019,7 +1021,23 @@ class CorujeiraHootCard extends HTMLElement {
       <style>
         ha-card { padding:14px 16px 14px 12px; }
         .wrap { display:flex; align-items:flex-start; gap:10px; }
-        .who { flex:none; width:64px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+        .who { position:relative; flex:none; width:64px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+        /* power saving: an orange banner leading the bubble and a battery badge on the speaker */
+        .mode { display:flex; align-items:center; gap:8px; margin:0 0 8px; padding:7px 10px; border-radius:12px; font-size:13.5px; line-height:1.3;
+          color:var(--primary-text-color); background:color-mix(in srgb, var(--hoot-saving, #E08A1E) 16%, transparent);
+          border:1px solid color-mix(in srgb, var(--hoot-saving, #E08A1E) 50%, transparent); }
+        .mode[hidden] { display:none; }
+        .mode svg { flex:none; width:22px; height:22px; color:var(--hoot-saving, #E08A1E); }
+        .mode b { color:var(--hoot-saving, #E08A1E); font-weight:800; }
+        .badge { position:absolute; top:-4px; right:-2px; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+          background:var(--hoot-saving, #E08A1E); color:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); animation:pulse 2.4s ease-in-out infinite; }
+        .badge[hidden] { display:none; }
+        .badge svg { width:16px; height:16px; }
+        @keyframes pulse { 0%, 100% { transform:scale(1); } 50% { transform:scale(1.12); } }
+        @media (prefers-reduced-motion: reduce) { .badge { animation:none; } }
+        .compact .mode { font-size:13px; padding:5px 9px; margin-bottom:6px; }
+        .compact .badge { width:20px; height:20px; top:-4px; right:0; }
+        .compact .badge svg { width:13px; height:13px; }
         .who.link { cursor:pointer; -webkit-tap-highlight-color:transparent; }
         .owl, .cat { width:58px; height:67px; display:block; overflow:visible; }
         .lids > * { transform-box:fill-box; transform-origin:50% 0; transform:scaleY(0); animation:blink 7s infinite; }
@@ -1083,8 +1101,8 @@ class CorujeiraHootCard extends HTMLElement {
       </style>
       <ha-card class="${this._c.compact ? `compact${this._c.details ? "" : " chips-only"}` : ""}">
         <div class="wrap">
-          <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div></div>
-          <div class="bubble"><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
+          <div class="who"><div class="art"></div><div class="name"></div><div class="sub"></div><span class="badge" hidden title="Power saving">${BATT}</span></div>
+          <div class="bubble"><div class="mode" hidden></div><div class="hello"></div><ul></ul><button class="more" hidden></button></div>
         </div>
       </ha-card>`;
     const nav = this._c.navigate, w = this.shadowRoot.querySelector(".who"), c = this._c;
@@ -1160,14 +1178,23 @@ class CorujeiraHootCard extends HTMLElement {
     if (!this.shadowRoot || !this._c) return;
     const land = this._land, fresh = land && land.ts && Date.now() - land.ts < this._c.stale_hours * 3600e3;
     const weather = fresh ? land.items || [] : [];
-    const all = [...this._fire(), ...weather].sort((a, b) => a.pri - b.pri);
+    // power saving leads as a banner (and a badge on the speaker) instead of a line in the list
+    const saving = weather.find(x => x.mode === "saving");
+    const all = [...this._fire(), ...weather.filter(x => x !== saving)].sort((a, b) => a.pri - b.pri);
+    const mode = this.shadowRoot.querySelector(".mode"), badge = this.shadowRoot.querySelector(".badge");
+    mode.hidden = badge.hidden = !saving;
+    if (saving) {
+      const m = String(saving.text).match(/^([^:]+):\s*(.*)$/);
+      mode.innerHTML = `${BATT}<span><b>${esc(m ? m[1] : saving.text)}</b>${m && m[2] ? `<br>${esc(m[2].replace(/\.$/, ""))}` : ""}</span>`;
+      mode.title = saving.text;
+    }
     const max = this._c.max, shown = this._open || this._c.compact ? all : all.slice(0, max);
     const sp = SPEAKERS[this._who] || SPEAKERS.hoot, hi = sp.hi(new Date().getHours());
     const hello = this.shadowRoot.querySelector(".hello");
-    hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : `${hi} ${sp.quiet}`;
+    hello.textContent = !land && !all.length ? sp.wait : all.length ? `${hi} ${sp.lead}` : saving ? hi : `${hi} ${sp.quiet}`;
     const ul = this.shadowRoot.querySelector("ul");
     if (this._c.compact && this._c.details) {
-      hello.textContent = !land && !all.length ? sp.wait : all.length ? hi : `${hi} ${sp.quiet}`;
+      hello.textContent = !land && !all.length ? sp.wait : all.length || saving ? hi : `${hi} ${sp.quiet}`;
       ul.className = "rows";
       ul.innerHTML = shown.map(x => {
         const col = esc(this._colors[x.kind] || this._colors.plant), d = detailOf(x);
@@ -1177,7 +1204,7 @@ class CorujeiraHootCard extends HTMLElement {
       ul.innerHTML = shown.length ? shown.map(x => {
         const col = esc(this._colors[x.kind] || this._colors.plant);
         return `<li style="color:color-mix(in srgb, ${col} 82%, #000);background:color-mix(in srgb, ${col} 14%, transparent)" title="${esc(x.text)}"><span class="ic" style="color:${col}">${icon(x.kind)}</span>${esc(x.tag || shortTag(x.text))}</li>`;
-      }).join("") : `<li class="quiet">${esc(!land ? sp.wait : sp.quiet)}</li>`;
+      }).join("") : saving ? "" : `<li class="quiet">${esc(!land ? sp.wait : sp.quiet)}</li>`;
     } else ul.innerHTML = shown.map(x => {
       const col = this._colors[x.kind] || this._colors.plant;
       return `<li><span class="ic" style="color:${esc(col)};background:color-mix(in srgb, ${esc(col)} 13%, transparent)">${icon(x.kind)}</span><span>${lead(x.text, col)}</span></li>`;
@@ -1774,7 +1801,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
   _renderAdvice() {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
-    if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail }) => ({ pri, kind, text, tag, detail })));
+    if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail, mode }) => ({ pri, kind, text, tag, detail, mode })));
     const sol = this._s && this._solar();
     if (sol) { publishSolar(sol); this._logForecast(sol); }
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
@@ -2097,7 +2124,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const dullRun = best > 0 ? runs((d, i) => isDull(i)).find(x => x.b > x.a && x.a <= 2) : null;
     // "power saving" means: no air fryer or Instant Pot until the sun comes back
     const until = dullRun ? ` until ${sday(dullRun.b)}` : "";
-    const hold = (why, at) => add(2, at, `Power saving${until}: no air fryer or Instant Pot${why ? ", " + why : ""}.`, "power", "Power saving", "no air fryer or Instant Pot");
+    // it leads (pri 0) and carries mode "saving", which Hoot shows as a banner and a badge on the speaker
+    const hold = (why, at) => { add(0, at, `Power saving${until}: no air fryer or Instant Pot${why ? ", " + why : ""}.`, "power", "Power saving", "no air fryer or Instant Pot"); out[out.length - 1].mode = "saving"; };
     const why = null;
     const lowest = this._battLow(pvH, batt, 0, this._c.horizon_h);
     if (lowest != null) {

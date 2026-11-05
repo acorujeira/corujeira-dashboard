@@ -578,7 +578,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
   _renderAdvice() {
     const lang = (this._hass && this._hass.locale && this._hass.locale.language) || "en";
     const adv = this._s ? this._advice(this._s.days, lang, this._past) : [];
-    if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail }) => ({ pri, kind, text, tag, detail })));
+    if (this._s) publishLand(adv.map(({ pri, kind, text, tag, detail, mode }) => ({ pri, kind, text, tag, detail, mode })));
     const sol = this._s && this._solar();
     if (sol) { publishSolar(sol); this._logForecast(sol); }
     this.shadowRoot.querySelector(".advice").innerHTML = (this._c.advice ? adv.slice(0, ADVICE_MAX) : []).map(x =>
@@ -901,7 +901,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const dullRun = best > 0 ? runs((d, i) => isDull(i)).find(x => x.b > x.a && x.a <= 2) : null;
     // "power saving" means: no air fryer or Instant Pot until the sun comes back
     const until = dullRun ? ` until ${sday(dullRun.b)}` : "";
-    const hold = (why, at) => add(2, at, `Power saving${until}: no air fryer or Instant Pot${why ? ", " + why : ""}.`, "power", "Power saving", "no air fryer or Instant Pot");
+    // it leads (pri 0) and carries mode "saving", which Hoot shows as a banner and a badge on the speaker
+    const hold = (why, at) => { add(0, at, `Power saving${until}: no air fryer or Instant Pot${why ? ", " + why : ""}.`, "power", "Power saving", "no air fryer or Instant Pot"); out[out.length - 1].mode = "saving"; };
     const why = null;
     const lowest = this._battLow(pvH, batt, 0, this._c.horizon_h);
     if (lowest != null) {
