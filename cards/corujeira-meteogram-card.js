@@ -822,7 +822,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const hh = h => `${String(((h % 24) + 24) % 24).padStart(2, "0")}:00`;
     const live = w => w && t0 + (w.a - 1) * 3600e3 <= now;   // the window has already started
     const hours = w => live(w) ? `now until ${hh(w.b)}` : `${hh(w.a - 1)} to ${hh(w.b)}`;
-    const dayAt = i => { const w = sunWin(i); return w ? `${name(days[i])}, ${hours(w)}` : name(days[i]); };
+    const dayAt = i => { const w = sunWin(i); return !w ? name(days[i]) : live(w) ? hours(w) : `${name(days[i])}, ${hours(w)}`; };
     const sunVals = sunOf.filter(v => v != null), best = sunVals.length ? Math.max(...sunVals) : 0;
     const absDull = pvH ? LAND.dullPv : LAND.dullAbs, absBright = pvH ? LAND.brightPv : LAND.brightMin;
     if (best > 0) {
@@ -837,9 +837,17 @@ class CorujeiraMeteogramCard extends HTMLElement {
         if (u.a === 0) tip = next >= 0 ? `Keep the air fryer and Instant Pot off, and save pumping and power tools for ${dayAt(next)}.`
           : "Keep the air fryer, Instant Pot and other big loads off where you can.";
         // with a wet spell coming the pump line already says when to pump (before the creek runs muddy)
-        else tip = `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? dayAt(0) : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${next >= 0 ? dayAt(next) : "the sun returns"}.`;
+        else {
+          // the best sun hours left before the dull run (today's remaining hours count), if the profile knows them
+          let k = -1, e = 0;
+          for (let i = 0; i < u.a; i++) { const w = sunWin(i); if (w && w.e > e) { e = w.e; k = i; } }
+          const until = next >= 0 ? dayAt(next) : "the sun returns";
+          tip = k >= 0 ? `Run ${spell ? "" : "the pump, "}power tools and any air fryer or Instant Pot cooking ${dayAt(k)}, then keep the air fryer and Instant Pot off until ${until}.`
+            : `Run ${spell ? "" : "the pump and "}power tools ${u.a === 1 ? "today" : "by " + name(days[u.a - 1])}, then keep the air fryer and Instant Pot off until ${until}.`;
+          var detail = k >= 0 ? `big loads ${k === 0 ? "today" : sday(k)}` : `power tools by ${sday(u.a - 1)}`;
+        }
         add(2, u.a, `Little sun ${span(u.a, u.b)}: ${easy}. ${tip}`, "power", `Low sun ${sday(u.a)}`,
-          u.a <= 1 ? "air fryer and Instant Pot off" : `power tools by ${sday(u.a - 1)}`);
+          u.a === 0 ? "air fryer and Instant Pot off" : detail);
       } else if (lowDay !== undefined) {
         const next = bright(lowDay);
         add(2, lowDay, `Battery at ${batt}% with little sun ${name(days[lowDay])}: keep the air fryer and Instant Pot off until ${next >= 0 ? dayAt(next) : "the sun returns"}.`,
