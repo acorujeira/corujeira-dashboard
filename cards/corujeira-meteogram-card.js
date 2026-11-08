@@ -124,9 +124,11 @@ const siteProfile = (pv, batt, om) => {
 };
 
 // Usual load (W) for each UTC hour, averaged over the hourly statistics of a consumption sensor; null if thin.
+// An hour whose min equals its max is one Home Assistant filled in after a restart with the last value it saw: the
+// MultiPlus (and HA with it) was switched off, so the AC loads were really 0 W.
 const loadProfile = st => {
   const sum = Array(24).fill(0), n = Array(24).fill(0);
-  for (const r of st || []) { if (r.mean == null) continue; const h = new Date(msOf(r.start)).getUTCHours(); sum[h] += r.mean; n[h]++; }
+  for (const r of st || []) { if (r.mean == null) continue; const h = new Date(msOf(r.start)).getUTCHours(); sum[h] += r.min === r.max ? 0 : r.mean; n[h]++; }
   return n.every(k => k >= 3) ? sum.map((v, h) => Math.round(v / n[h])) : null;
 };
 // Expected kWh for day i from hourly expected watts (slot h is the hour ending at forecast hour h); null if thin.
@@ -231,7 +233,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const k = `corujeira-meteogram:pv:${id}`;
     // a cached profile arrives after the first advice pass on load, so redo the advice with it
     if (!this._prof) { const hit = store.get(k); if (hit && Array.isArray(hit.f)) { this._prof = hit; if (this._s) this._renderAdvice(); } }
-    const lid = this._c.loads, stale = lid && !this._prof?.load;
+    const lid = this._c.loads, stale = lid && (!this._prof?.load || this._prof.v !== 2);
     if (this._prof && !stale && Date.now() - this._prof.ts < 6 * 3600e3) return;
     if (this._profTry && Date.now() - this._profTry < 30 * 60e3) return;
     const c = this._coords();
@@ -242,12 +244,12 @@ class CorujeiraMeteogramCard extends HTMLElement {
       past_days: days, forecast_days: 1, timezone: "GMT", timeformat: "unixtime" });
     Promise.all([
       h.callWS({ type: "recorder/statistics_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
-        statistic_ids: [id, bid, lid].filter(Boolean), period: "hour", types: ["mean"] }),
+        statistic_ids: [id, bid, lid].filter(Boolean), period: "hour", types: ["mean", "min", "max"] }),
       fetch(`${API}?${q}`).then(r => r.ok ? r.json() : Promise.reject(r.status)),
     ]).then(([st, om]) => {
       const f = siteProfile(st[id], bid ? st[bid] : [], om.hourly);
       if (!f) return;
-      this._prof = { ts: Date.now(), f, load: lid ? loadProfile(st[lid]) : null };
+      this._prof = { v: 2, ts: Date.now(), f, load: lid ? loadProfile(st[lid]) : null };
       store.set(k, this._prof);
       if (this._s) this._renderAdvice();
     }).catch(() => {}).finally(() => { this._profBusy = false; });

@@ -42,6 +42,7 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 - Hoot `compact` shows a short greeting and, per line, the tag chip plus a few words of `detail` (from the line's `detail`, else the first clause after its lead phrase); `details: false` gives bare chips.
 - Meteogram `compact: true`: a weather tile (now from `current` weather entity, humidity/wind/`uv`, the written forecast, a five-day strip); the kitchen uses it instead of the charts.
 - Meteogram `hidden: true` fetches and publishes advice without drawing (the card hides its slot via `card-visibility-changed`).
+- Meteogram load profile: an hour whose statistics min equals max counts as 0 W. Those hours are ones HA backfilled after a restart: when Eska switches the MultiPlus off overnight, HA (on the HA Green) goes off too, and on boot the recorder fills the missed hours with the last value it saw. The dashboard's energy charts drop the same flat 5-minute buckets (in their `data_generator`s on `corujeira-bubble`).
 - Meteogram low-silo line (`silo`, `silo_low` default 40%) is off on the dashboard. Scale: 100% = 5,000 L.
 
 ### Silo
@@ -62,7 +63,7 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 ### Flow
 
 - Supports up to 4 loads (circles shrink, staggered wire heights so lines never cross), `dashed: true` per load, and multiple sources in the top row.
-- `stale: <binary_sensor>`: while on, all values show a dash, wires go quiet, and the hub reads "No data" with the time the hub entity last updated. On the dashboard it is `binary_sensor.power_data_stale` (no Victron GX reading for 5 min, e.g. MultiPlus off overnight takes the network with it).
+- `stale: <binary_sensor>`: while on, all values show a dash, wires go quiet, and the hub reads "No data" with the time the hub entity last updated. On the dashboard it is `binary_sensor.power_data_stale` (no Victron GX reading for 5 min while HA runs; an overnight MultiPlus switch-off takes HA down too, so that case shows up as flat backfilled statistics instead).
 
 ## Writing
 
