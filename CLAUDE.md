@@ -62,6 +62,7 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 ### Flow
 
 - Supports up to 4 loads (circles shrink, staggered wire heights so lines never cross), `dashed: true` per load, and multiple sources in the top row.
+- `stale: <binary_sensor>`: while on, all values show a dash, wires go quiet, and the hub reads "No data" with the time the hub entity last updated. On the dashboard it is `binary_sensor.power_data_stale` (no Victron GX reading for 5 min, e.g. MultiPlus off overnight takes the network with it).
 
 ## Writing
 

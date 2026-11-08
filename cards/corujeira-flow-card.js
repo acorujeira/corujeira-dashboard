@@ -1,6 +1,9 @@
 /* A Corujeira flow card v5: sources on top, hub in the middle, up to 4 loads below, wiring-diagram lines.
    With 4 loads the load circles shrink so they fit. A node with dashed: true gets a dashed ring (used for "Other").
-   Scales to match the height of the card beside it in the same row. Remove this resource to revert. */
+   Scales to match the height of the card beside it in the same row. Remove this resource to revert.
+   stale: <binary_sensor> (optional). While it is on, the readings are old (e.g. the inverter is off and the
+   network with it), so every value shows a dash, the wires go quiet and the hub reads "No data" with the time
+   the hub entity last updated. */
 (() => {
 const W = 340, H = 334, R = 40, RS = 34, HX = 170, HY = 167, TOPY = 61, BOTY = 273, RC = 8, ENTRY = 20, PAD = 8;
 const COLS = { 1: [170], 2: [55, 285], 3: [55, 170, 285], 4: [42, 127, 213, 298] };
@@ -186,6 +189,8 @@ class CorujeiraFlowCard extends HTMLElement {
         .node.sm .ic { --mdc-icon-size:19px; }
         .node.sm .mask { width:18px; height:23px; }
         .node.sm .val { font-size:11px; }
+        .wrap.stale .node:not(.hub), .wrap.stale .line { opacity:.45; }
+        .wrap.stale .node.hub .val { font-size:10.5px; }
         .name { position:absolute; transform:translate(-50%,-100%); font-size:12px; letter-spacing:.02em; color:var(--secondary-text-color); white-space:nowrap; }
         .name.load { transform:translate(-50%,0); }
       </style>
@@ -226,12 +231,38 @@ class CorujeiraFlowCard extends HTMLElement {
     return v.toFixed(s.decimals ?? 1) + (unit ? " " + unit : "");
   }
 
+  _isStale() {
+    const id = this._c.stale, s = id && this._hass.states[id];
+    return !!(s && s.state === "on");
+  }
+  _since() {
+    const s = this._hass.states[this._c.hub.entity];
+    const t = s && Date.parse(s.last_updated);
+    if (!isFinite(t)) return "";
+    const d = new Date(t);
+    const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    return Date.now() - t < 20 * 3600e3 ? "since " + hm : "since " + d.toLocaleDateString([], { weekday: "short" });
+  }
+
   _update() {
     if (!this._built || !this._hass) return;
     const root = this.shadowRoot;
+    const stale = this._isStale();
+    root.querySelector(".wrap").classList.toggle("stale", stale);
     Object.values(this._byKey).forEach(n => {
       const el = root.querySelector(`.node[data-k="${n.key}"]`);
       if (!el) return;
+      if (stale) {
+        const topText = el.querySelector(".tt"), topIcon = el.querySelector(".ti"), val = el.querySelector(".val");
+        topIcon.hidden = true;
+        if (n.key === "hub") { topText.textContent = this._since(); val.textContent = "No data"; return; }
+        topText.textContent = n.soc_entity ? "—" : this._secondary(n);
+        val.classList.remove("batt");
+        val.textContent = "—";
+        root.querySelector(`.line[data-k="${n.key}"]`).classList.add("idle");
+        root.querySelector(`.dot[data-k="${n.key}"]`).classList.add("idle");
+        return;
+      }
       let v = this._num(n.entity);
       if (n.invert) v = -v;
       const topText = el.querySelector(".tt"), topIcon = el.querySelector(".ti"), val = el.querySelector(".val");
