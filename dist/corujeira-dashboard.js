@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.27.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.27.2. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.27.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.27.2 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2068,9 +2068,11 @@ class CorujeiraMeteogramCard extends HTMLElement {
     const name = d => d.date === iso(today) ? "today" : d.date === iso(tom) ? "tomorrow"
       : new Date(d.date + "T12:00:00").toLocaleDateString(lang, { weekday: "long" });
     const span = (a, b) => a === b ? name(days[a]) : `${name(days[a])} to ${name(days[b])}`;
-    // short day for the keyword tags: today, tomorrow, then Wed, Thu…
-    const sday = i => { const n = name(days[i]); return n === "today" || n === "tomorrow" ? n
-      : new Date(days[i].date + "T12:00:00").toLocaleDateString(lang, { weekday: "short" }); };
+    // short day for the keyword tags: today, tomorrow, then Wed, Thu… From 5 days out the date is added
+    // ("Sun 15"): on a Monday a bare "Sun" or "Sat" reads as the weekend just gone.
+    const sday = i => { const n = name(days[i]); if (n === "today" || n === "tomorrow") return n;
+      const dt = new Date(days[i].date + "T12:00:00"), wd = dt.toLocaleDateString(lang, { weekday: "short" });
+      return i >= 5 ? `${wd} ${dt.getDate()}` : wd; };
     const r = Math.round, out = [], add = (pri, at, text, kind, tag, detail) => out.push({ pri, at, text, kind, tag, detail });
     const runs = test => {
       const res = [];
@@ -2100,7 +2102,8 @@ class CorujeiraMeteogramCard extends HTMLElement {
     // wet spell: 3+ days in a row with real rain (>= 3 mm expected) adding up to a soaking. It is the
     // big picture, so it takes the place of a separate heavy-rain line for the days inside it.
     const spell = runs(d => exp(d) >= 3).find(x => x.b - x.a >= 2 && days.slice(x.a, x.b + 1).reduce((t, d) => t + exp(d), 0) >= LAND.soak);
-    const heavyIn = spell && heavy.find(h => h.a >= spell.a && h.b <= spell.b);
+    // every heavy run inside the spell is covered by the spell line, not just the first one
+    const inSpell = h => spell && h.a >= spell.a && h.b <= spell.b;
     if (spell) {
       const mm = r(days.slice(spell.a, spell.b + 1).reduce((t, d) => t + exp(d), 0));
       const open = spell.b === days.length - 1; // still raining when the forecast runs out
@@ -2113,7 +2116,7 @@ class CorujeiraMeteogramCard extends HTMLElement {
         dry >= 7 ? `Rain from ${sday(spell.a)}` : `Wet from ${sday(spell.a)}`, `about ${mm} mm${open ? ", no end in sight" : ""}`);
     }
     for (const h of heavy) {
-      if (h === heavyIn) continue;
+      if (inSpell(h)) continue;
       const mm = r(days.slice(h.a, h.b + 1).reduce((t, d) => t + exp(d), 0));
       add(1, h.a, `Heavy rain ${ss(h.a, h.b)}: ~${mm} mm. ${up(chores)}.`, "rain", `Heavy rain ${sday(h.a)}`);
       break;
