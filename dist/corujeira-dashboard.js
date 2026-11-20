@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.28.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.29.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-since-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.28.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.29.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2999,8 +2999,12 @@ if (!window.customCards.find(c => c.type === "corujeira-silo-card"))
    card's graph_span to the whole hours since that date and rebuilds it when the hour count grows, so the
    start stays within the hour of the date. Change the date in Home Assistant, not here.
    Options:
-     entity: the date entity (its `timestamp` attribute, else its state, is the start)
-     card:   the apexcharts-card config (graph_span and span are set by this wrapper)
+     entity:      the date entity (its `timestamp` attribute, else its state, is the start)
+     card:        the apexcharts-card config (graph_span and span are set by this wrapper)
+     span_entity: optional input_select of spans such as 3h, 24h, 7d; any other option (such as "All") means
+                  since the date. Pair it with corujeira-span-card on the same input_select for the pills.
+     title:       optional; sets the chart's header title to "<title> · <span>"
+     since_label: optional; the span word used for "since the date" in the title (default "since the start")
    Remove this resource to revert. */
 (() => {
 class CorujeiraSinceCard extends HTMLElement {
@@ -3020,17 +3024,26 @@ class CorujeiraSinceCard extends HTMLElement {
     const t = Number.isFinite(ts) && ts > 0 ? ts * 1000 : Date.parse(s.state);
     return Number.isFinite(t) ? t : null;
   }
+  _fixed() {
+    const s = this._c.span_entity && this._hass && this._hass.states[this._c.span_entity];
+    const m = s && /^(\d+(?:\.\d+)?)\s*(h|d)$/i.exec(String(s.state).trim());
+    return m ? { hours: parseFloat(m[1]) * (m[2].toLowerCase() === "d" ? 24 : 1), label: s.state } : null;
+  }
   _spanHours() {
+    const f = this._fixed();
+    if (f) return f.hours;
     const t = this._start();
     return t == null ? null : Math.max(1, Math.ceil((Date.now() - t) / 3600e3));
   }
+  _key() { const f = this._fixed(); return f ? `fixed:${f.hours}` : `since:${this._spanHours()}`; }
   async _build() {
-    const hours = this._spanHours();
-    if (this._card && hours === this._hours) return;
-    this._hours = hours;
+    const hours = this._spanHours(), key = this._key(), f = this._fixed();
+    if (this._card && key === this._hours) return;
+    this._hours = key;
     const token = this._token = (this._token || 0) + 1;
     const cfg = JSON.parse(JSON.stringify(this._c.card));
     if (hours != null) { cfg.graph_span = `${hours}h`; delete cfg.span; }
+    if (this._c.title) cfg.header = { ...(cfg.header || {}), title: `${this._c.title} · ${f ? f.label : (this._c.since_label || "since the start")}` };
     const h = await window.loadCardHelpers();
     if (token !== this._token) return;
     const el = h.createCardElement(cfg);
@@ -3045,11 +3058,11 @@ class CorujeiraSinceCard extends HTMLElement {
     const first = !this._hass;
     this._hass = h;
     if (this._card) this._card.hass = h;
-    if (first || this._spanHours() !== this._hours) this._build();
+    if (first || this._key() !== this._hours) this._build();
   }
   connectedCallback() {
     clearInterval(this._tick);
-    this._tick = setInterval(() => { if (this._hass && this._spanHours() !== this._hours) this._build(); }, 300e3);
+    this._tick = setInterval(() => { if (this._hass && this._key() !== this._hours) this._build(); }, 300e3);
   }
   disconnectedCallback() { clearInterval(this._tick); }
   getCardSize() { return this._card && this._card.getCardSize ? this._card.getCardSize() : 5; }
