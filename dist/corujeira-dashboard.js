@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.27.2. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
-   Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.27.2 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+/* A Corujeira dashboard cards v1.28.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+   Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-since-card, corujeira-span-card, corujeira-zones-card. */
+console.info("%c A CORUJEIRA %c dashboard cards v1.28.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
@@ -2991,6 +2991,74 @@ if (!customElements.get("corujeira-silo-card")) customElements.define("corujeira
 window.customCards = window.customCards || [];
 if (!window.customCards.find(c => c.type === "corujeira-silo-card"))
   window.customCards.push({ type: "corujeira-silo-card", name: "A Corujeira silo", description: "Water tank drawing that fills to the current level, with % and litres, plus an optional pump switch." });
+})();
+
+// ---- corujeira-since-card.js
+/* A Corujeira since: wraps an apexcharts-card so its time axis starts at a date held in Home Assistant
+   (an input_datetime such as input_datetime.hot_compost_built) and ends now. The wrapper sets the inner
+   card's graph_span to the whole hours since that date and rebuilds it when the hour count grows, so the
+   start stays within the hour of the date. Change the date in Home Assistant, not here.
+   Options:
+     entity: the date entity (its `timestamp` attribute, else its state, is the start)
+     card:   the apexcharts-card config (graph_span and span are set by this wrapper)
+   Remove this resource to revert. */
+(() => {
+class CorujeiraSinceCard extends HTMLElement {
+  setConfig(c) {
+    if (!c || !c.entity || !c.card) throw new Error("corujeira-since-card: entity and card are required");
+    this._c = c;
+    this._hours = null;
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `<style>:host { display:block; }</style><div class="inner"></div>`;
+    this._card = null;
+    if (this._hass) this._build();
+  }
+  _start() {
+    const s = this._hass && this._hass.states[this._c.entity];
+    if (!s) return null;
+    const ts = Number(s.attributes && s.attributes.timestamp);
+    const t = Number.isFinite(ts) && ts > 0 ? ts * 1000 : Date.parse(s.state);
+    return Number.isFinite(t) ? t : null;
+  }
+  _spanHours() {
+    const t = this._start();
+    return t == null ? null : Math.max(1, Math.ceil((Date.now() - t) / 3600e3));
+  }
+  async _build() {
+    const hours = this._spanHours();
+    if (this._card && hours === this._hours) return;
+    this._hours = hours;
+    const token = this._token = (this._token || 0) + 1;
+    const cfg = JSON.parse(JSON.stringify(this._c.card));
+    if (hours != null) { cfg.graph_span = `${hours}h`; delete cfg.span; }
+    const h = await window.loadCardHelpers();
+    if (token !== this._token) return;
+    const el = h.createCardElement(cfg);
+    el.addEventListener("ll-rebuild", e => { e.stopPropagation(); this._card = null; this._build(); });
+    if (this._hass) el.hass = this._hass;
+    const inner = this.shadowRoot.querySelector(".inner");
+    inner.innerHTML = "";
+    inner.appendChild(el);
+    this._card = el;
+  }
+  set hass(h) {
+    const first = !this._hass;
+    this._hass = h;
+    if (this._card) this._card.hass = h;
+    if (first || this._spanHours() !== this._hours) this._build();
+  }
+  connectedCallback() {
+    clearInterval(this._tick);
+    this._tick = setInterval(() => { if (this._hass && this._spanHours() !== this._hours) this._build(); }, 300e3);
+  }
+  disconnectedCallback() { clearInterval(this._tick); }
+  getCardSize() { return this._card && this._card.getCardSize ? this._card.getCardSize() : 5; }
+  getGridOptions() { return { columns: 12, rows: "auto" }; }
+}
+if (!customElements.get("corujeira-since-card")) customElements.define("corujeira-since-card", CorujeiraSinceCard);
+window.customCards = window.customCards || [];
+if (!window.customCards.find(c => c.type === "corujeira-since-card"))
+  window.customCards.push({ type: "corujeira-since-card", name: "A Corujeira since", description: "Starts a chart's time axis at a date held in Home Assistant." });
 })();
 
 // ---- corujeira-span-card.js
