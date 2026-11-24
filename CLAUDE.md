@@ -58,7 +58,8 @@ The brand CSS (type, cream tiles, warm dialogs) and the `corujeira:<name>` icon 
 
 ### Air
 
-- Compact verdict tile plus a detail mode for a pop-up. Bands and damp advice logic are in the card; keep thresholds there in sync with any doc changes.
+- Compact verdict tile plus a detail mode for a pop-up. Bands are in the card; keep thresholds there in sync with any doc changes.
+- Data only, no advice lines (Eska, 24 Nov 2026: too hand-holdy). Under the headline: dew point inside and out. Reference lines are short thresholds.
 
 ### Flow
 

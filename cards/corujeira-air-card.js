@@ -1,15 +1,13 @@
-/* A Corujeira air card: indoor air as one verdict in plain words, with what to do about it.
-   Compact mode is one tile: a headline ("Fresh air", "Damp"), the advice for whatever is out of range, and the temperature.
+/* A Corujeira air card: indoor air as one verdict in plain words. Data only, no advice (Eska, 24 Nov 2026: too hand-holdy).
+   Compact mode is one tile: a headline ("Fresh air", "A bit damp, some smoke"), the dew point inside and out, and the temperature.
    Detail mode (for a pop-up) adds one row per reading: a word for its state, a banded bar with a marker where the reading
-   sits, and a reference line that says what the number means. Each row can open that reading's graph.
-   Damp is common in the yurt, so there is no standing advice about it: a line only appears when the outside air
-   is clearly drier (dew points compared), so opening up would help. No "light the burner" nudges.
+   sits, and a short reference line with the thresholds. Each row can open that reading's graph.
    Options:
      mode:        compact (default) | detail
      name:        default "Air in the yurt"
      icon:        default mdi:weather-windy
      humidity, co2, radon, pm25, voc, temperature: sensor entities (any can be left out)
-     outdoor:     weather entity for outside temperature and humidity/dew point (optional; enables damp advice)
+     outdoor:     weather entity for outside temperature and humidity/dew point (optional; adds the outside dew point)
      graphs:      { humidity: "#air-hum-24h", co2: ..., ... } where tapping a row goes in detail mode (optional)
      all_graphs:  path for an "All graphs" link at the foot of the detail view (optional)
      navigate:    where tapping the compact tile goes (e.g. "#air"; default: none)
@@ -26,23 +24,23 @@ const METRICS = {
   humidity: { name: "Humidity", unit: "%", d: 0, min: 15, max: 90, bands: [
       { to: 30, lv: 1, word: "Dry", col: "cold", w: 1 }, { to: 60, lv: 0, word: "Comfortable", col: "good", w: 2.2 },
       { to: 70, lv: 1, word: "A bit damp", col: "fair", w: 1 }, { to: Infinity, lv: 2, word: "Damp", col: "poor", w: 1.2 }],
-    ref: "Comfortable 30–60%. Mould grows if it stays above 70%." },
+    ref: "Comfortable 30–60%, mould risk above 70%." },
   co2: { name: "CO₂", unit: "ppm", d: 0, min: 400, max: 2000, bands: [
       { to: 800, lv: 0, word: "Fresh", col: "good", w: 2 }, { to: 1000, lv: 1, word: "Getting stuffy", col: "fair", w: .8 },
       { to: Infinity, lv: 2, word: "Stuffy", col: "poor", w: 1.4 }],
-    ref: "Outdoor air is about 420. Stuffy and sleepy above 1,000." },
+    ref: "Outdoor about 420, stuffy above 1,000." },
   radon: { name: "Radon", unit: "Bq/m³", d: 0, min: 0, max: 400, bands: [
       { to: 100, lv: 0, word: "Low", col: "good", w: 1.6 }, { to: 300, lv: 1, word: "Raised", col: "fair", w: 1.4 },
       { to: Infinity, lv: 2, word: "High", col: "poor", w: .8 }],
-    ref: "WHO aims below 100. Portugal's reference level is 300." },
+    ref: "WHO 100, Portugal 300." },
   pm25: { name: "Smoke and dust", short: "PM2.5", unit: "µg/m³", d: 0, min: 0, max: 60, bands: [
       { to: 15, lv: 0, word: "Clean", col: "good", w: 1.6 }, { to: 35, lv: 1, word: "Some smoke", col: "fair", w: 1.1 },
       { to: Infinity, lv: 2, word: "Smoky", col: "poor", w: 1 }],
-    ref: "Fine particles (PM2.5). WHO daily guideline 15." },
+    ref: "PM2.5. WHO 24 h guideline 15." },
   voc: { name: "Fumes and odours", short: "VOC", unit: "ppb", d: 0, min: 0, max: 3000, bands: [
       { to: 250, lv: 0, word: "Low", col: "good", w: 1.4 }, { to: 2000, lv: 1, word: "Some odours", col: "fair", w: 1.6 },
       { to: Infinity, lv: 2, word: "Strong", col: "poor", w: .7 }],
-    ref: "Cooking, wood, paint and people raise it. Airthings counts under 250 as low." },
+    ref: "Airthings: low under 250, high from 2,000." },
   temperature: { name: "Temperature", unit: "°C", d: 1, min: 8, max: 32, bands: [
       { to: 16, lv: 1, word: "Cold", col: "cold", w: 1.2 }, { to: 18, lv: 0, word: "Cool", col: "good", w: .6 },
       { to: 24, lv: 0, word: "Comfortable", col: "good", w: 1.6 }, { to: Infinity, lv: 1, word: "Warm", col: "fair", w: 1.1 }],
@@ -50,9 +48,8 @@ const METRICS = {
 };
 const ORDER = ["humidity", "co2", "radon", "pm25", "voc", "temperature"];
 
-// Dew point (Magnus formula) and the water it stands for, in g/m³.
+// Dew point (Magnus formula).
 const dew = (t, rh) => { const a = 17.62, b = 243.12, g = Math.log(rh / 100) + a * t / (b + t); return b * g / (a - g); };
-const water = (t, rh) => 6.112 * Math.exp(17.67 * t / (t + 243.5)) * rh * 2.1674 / (273.15 + t);
 
 class CorujeiraAirCard extends HTMLElement {
   setConfig(c) {
@@ -84,9 +81,8 @@ class CorujeiraAirCard extends HTMLElement {
         .ic ha-icon { --mdc-icon-size:24px; }
         .txt { flex:1; min-width:0; }
         .verdict { font-size:16px; font-weight:700; line-height:1.25; }
-        .advice { font-size:13px; line-height:1.4; color:var(--secondary-text-color); margin-top:2px; }
-        .advice b { color:var(--primary-text-color); font-weight:600; }
-        .advice div + div { margin-top:3px; }
+        .sub { font-size:13px; line-height:1.4; color:var(--secondary-text-color); margin-top:2px; }
+        .sub:empty { display:none; }
         .temp { flex:none; text-align:right; font-size:22px; font-weight:300; line-height:1; }
         .temp small { display:block; font-size:11px; color:var(--secondary-text-color); margin-top:4px; font-weight:400; }
         .chev { flex:none; color:var(--secondary-text-color); opacity:.6; --mdc-icon-size:20px; margin-left:-4px; }
@@ -110,7 +106,7 @@ class CorujeiraAirCard extends HTMLElement {
         .foot button:focus-visible, .row.link:focus-visible, .head.link:focus-visible { outline:2px solid var(--primary-color); outline-offset:2px; }
       </style>
       <ha-card>
-        <div class="head"><div class="ic"><ha-icon></ha-icon></div><div class="txt"><div class="verdict"></div><div class="advice"></div></div>
+        <div class="head"><div class="ic"><ha-icon></ha-icon></div><div class="txt"><div class="verdict"></div><div class="sub"></div></div>
           <div class="temp"></div><ha-icon class="chev" icon="mdi:chevron-right" hidden></ha-icon></div>
         ${detail ? `<div class="rows"></div><div class="foot" hidden><button>All graphs</button></div>` : ""}
       </ha-card>`;
@@ -164,26 +160,11 @@ class CorujeiraAirCard extends HTMLElement {
     return isNaN(t) ? null : { t, rh: isNaN(rh) ? null : rh, dp: isNaN(dp) ? null : dp };
   }
 
-  // Damp is normal here, so the card only speaks up when airing out would actually help.
-  _damp(R, out) {
+  // Dew point inside and out, in °C: the numbers that say whether airing out would dry the yurt.
+  _dews(R, out) {
     const h = R.humidity, t = R.temperature;
-    if (!h || !t || !out || out.dp == null) return null;
-    return out.dp <= dew(t.v, h.v) - 2 ? "<b>Open up:</b> the outside air is drier." : null;
-  }
-
-  // One advice line per reading that is out of range, worst first.
-  _advice(R, out) {
-    const lines = [];
-    const add = (lv, html) => lines.push({ lv, html });
-    if (R.humidity && R.humidity.b.lv && R.humidity.v >= 60) { const d = this._damp(R, out); if (d) add(R.humidity.b.lv, d); }
-    if (R.humidity && R.humidity.v < 30) add(1, "<b>Dry air.</b> A pot of water on the burner helps.");
-    if (R.co2 && R.co2.b.lv) add(R.co2.b.lv, "<b>Open a door or the crown</b> for ten minutes.");
-    if (R.pm25 && R.pm25.b.lv) add(R.pm25.b.lv, R.pm25.b.lv === 2
-      ? "<b>Smoke in the air:</b> check the burner door and flue, then air it out."
-      : "<b>Some smoke or dust.</b> Air it out once the burner is drawing well.");
-    if (R.radon && R.radon.b.lv) add(R.radon.b.lv, "<b>Radon is up:</b> it builds when the yurt stays shut. Air it out daily.");
-    if (R.voc && R.voc.b.lv === 2) add(2, "<b>Strong fumes:</b> air it out, and check for paint, solvents or gas.");
-    return lines.sort((a, b) => b.lv - a.lv);
+    if (!h || !t) return null;
+    return { in: dew(t.v, h.v), out: out && out.dp != null ? out.dp : null };
   }
 
   _render() {
@@ -195,14 +176,13 @@ class CorujeiraAirCard extends HTMLElement {
     const col = !keys.length ? COL.none : worst === 2 ? COL.poor : worst === 1 ? COL.fair : COL.good;
     const words = flagged.slice(0, 2).map((x, i) => i ? x.b.word.toLowerCase() : x.b.word);
     const verdict = !keys.length ? "No readings" : words.length ? words.join(", ") : "Fresh air";
-    const lines = this._advice(R, out);
-    const advice = !keys.length ? "The air sensor isn't reporting."
-      : lines.length ? lines.slice(0, this._c.mode === "detail" ? 4 : 2).map(l => `<div>${l.html}</div>`).join("")
-      : "Every reading is in a healthy range.";
+    const dp = this._dews(R, out);
+    const sub = !keys.length ? "The air sensor isn't reporting."
+      : dp ? `Dew point ${fmt(dp.in, 1)} °C in${dp.out != null ? `, ${fmt(dp.out, 1)} °C out` : ""}` : "";
     const head = r.querySelector(".head");
     head.style.setProperty("--lv", col);
     r.querySelector(".verdict").textContent = verdict;
-    r.querySelector(".advice").innerHTML = advice;
+    r.querySelector(".sub").textContent = sub;
     const t = R.temperature, h = R.humidity;
     r.querySelector(".temp").innerHTML = t && this._c.mode !== "detail" ? `${fmt(t.v, 0)}°${h ? `<small>${fmt(h.v)}% RH</small>` : ""}` : "";
     if (this._c.mode !== "detail") return;
@@ -217,11 +197,7 @@ class CorujeiraAirCard extends HTMLElement {
         pos += span; lo = hi;
       }
       const segs = m.bands.map(x => `<span class="${x === b ? "on" : ""}" style="flex:${x.w};background:${COL[x.col]}"></span>`).join("");
-      let ref = m.ref;
-      if (k === "humidity" && t && out && out.rh != null) {
-        const wi = water(t.v, v), wo = water(out.t, out.rh);
-        ref = `Water in the air: ${fmt(wi, 1)} g/m³ inside, ${fmt(wo, 1)} outside. ${m.ref}`;
-      }
+      const ref = m.ref;
       const go = (this._c.graphs || {})[k];
       return `<div class="row link" tabindex="0" style="--lv:${c}" ${go ? `data-go="${esc(go)}"` : `data-id="${esc(this._c[k])}"`}>
         <div class="top"><span class="nm">${esc(m.name)}</span><span class="word">${esc(b.word)}</span>
@@ -234,5 +210,5 @@ class CorujeiraAirCard extends HTMLElement {
 if (!customElements.get("corujeira-air-card")) customElements.define("corujeira-air-card", CorujeiraAirCard);
 window.customCards = window.customCards || [];
 if (!window.customCards.find(c => c.type === "corujeira-air-card"))
-  window.customCards.push({ type: "corujeira-air-card", name: "A Corujeira Air", description: "Indoor air as one plain-language verdict with advice, and banded readings for a pop-up." });
+  window.customCards.push({ type: "corujeira-air-card", name: "A Corujeira Air", description: "Indoor air as one plain-language verdict with dew points, and banded readings for a pop-up." });
 })();

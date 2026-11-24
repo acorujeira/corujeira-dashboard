@@ -4,7 +4,7 @@ Custom Lovelace cards for the Home Assistant dashboard at A Corujeira, an off-gr
 
 | Card | Type | What it shows |
 | --- | --- | --- |
-| [`corujeira-air-card.js`](cards/corujeira-air-card.js) | `custom:corujeira-air-card` | Indoor air as one plain-language verdict with advice (damp advice compares the water in the air inside and out, and leads with the wood burner in cold weather); a detail mode for a pop-up shows each reading on a banded bar with a reference line. |
+| [`corujeira-air-card.js`](cards/corujeira-air-card.js) | `custom:corujeira-air-card` | Indoor air as one plain-language verdict with the dew point inside and out, no advice; a detail mode for a pop-up shows each reading on a banded bar with its thresholds. |
 | [`corujeira-flow-card.js`](cards/corujeira-flow-card.js) | `custom:corujeira-flow-card` | Power flow: up to 3 sources on top, a hub, up to 4 loads below, with animated wiring-diagram lines. |
 | [`corujeira-span-card.js`](cards/corujeira-span-card.js) | `custom:corujeira-span-card` | Wraps any card and overlays range pills driven by an `input_select`. |
 | [`corujeira-since-card.js`](cards/corujeira-since-card.js) | `custom:corujeira-since-card` | Wraps an apexcharts-card so its time axis starts at a date held in Home Assistant (an `input_datetime`) and ends now; an optional `span_entity` (input_select) switches it to fixed spans such as 3h or 48h. |
