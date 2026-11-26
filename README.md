@@ -88,7 +88,7 @@ card:
 
 ```yaml
 type: custom:corujeira-span-card
-entity: input_select.compost_chart_span   # options: Cycle, 12h, 24h, 48h, All
+entity: input_select.compost_chart_span   # options: 3h, 12h, 24h, Cycle, All
 card:
   type: custom:corujeira-since-card
   entity: input_datetime.hot_compost_built
