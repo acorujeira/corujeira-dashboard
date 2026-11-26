@@ -7,7 +7,7 @@ Custom Lovelace cards for the Home Assistant dashboard at A Corujeira, an off-gr
 | [`corujeira-air-card.js`](cards/corujeira-air-card.js) | `custom:corujeira-air-card` | Indoor air as one plain-language verdict with the dew point inside and out, no advice; a detail mode for a pop-up shows each reading on a banded bar with its thresholds. |
 | [`corujeira-flow-card.js`](cards/corujeira-flow-card.js) | `custom:corujeira-flow-card` | Power flow: up to 3 sources on top, a hub, up to 4 loads below, with animated wiring-diagram lines. |
 | [`corujeira-span-card.js`](cards/corujeira-span-card.js) | `custom:corujeira-span-card` | Wraps any card and overlays range pills driven by an `input_select`. |
-| [`corujeira-since-card.js`](cards/corujeira-since-card.js) | `custom:corujeira-since-card` | Wraps an apexcharts-card so its time axis starts at a date held in Home Assistant (an `input_datetime`) and ends now; an optional `span_entity` (input_select) switches it to fixed spans such as 3h or 48h. |
+| [`corujeira-since-card.js`](cards/corujeira-since-card.js) | `custom:corujeira-since-card` | Wraps an apexcharts-card so its time axis starts at a date held in Home Assistant (an `input_datetime`) and ends now; an optional `span_entity` (input_select) switches it to fixed spans such as 3h or 48h, and `starts` lets a span option start at another date (such as the last turn of a compost pile). |
 | [`corujeira-forecast-card.js`](cards/corujeira-forecast-card.js) | `custom:corujeira-forecast-card` | Next 12 hours (2-hourly) above a 5-day forecast, from any `weather` entity. |
 | [`corujeira-meteogram-card.js`](cards/corujeira-meteogram-card.js) | `custom:corujeira-meteogram-card` | Multi-model Open-Meteo meteogram with rain agreement, wind, a written summary and land advice. |
 | [`corujeira-hoot-card.js`](cards/corujeira-hoot-card.js) | `custom:corujeira-hoot-card` | Hoot the land wizard: an owl with a speech bubble of land advice (from the meteogram and Vigia fire watch), each line with a recolourable icon. |
@@ -84,6 +84,22 @@ entity: input_select.chart_span
 card:
   type: history-graph
   entities: [sensor.battery_soc]
+```
+
+```yaml
+type: custom:corujeira-span-card
+entity: input_select.compost_chart_span   # options: Cycle, 12h, 24h, 48h, All
+card:
+  type: custom:corujeira-since-card
+  entity: input_datetime.hot_compost_built
+  span_entity: input_select.compost_chart_span
+  starts:
+    Cycle: { entity: input_datetime.hot_compost_last_turn, label: this cycle }
+  title: Hot compost
+  since_label: since the build
+  card:
+    type: custom:apexcharts-card
+    series: [{ entity: sensor.compost_pile_temperature }]
 ```
 
 ```yaml
