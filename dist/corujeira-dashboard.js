@@ -1,6 +1,6 @@
-/* A Corujeira dashboard cards v1.31.0. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
+/* A Corujeira dashboard cards v1.31.1. Built from cards/ by scripts/build.mjs; edit the files in cards/, not this one.
    Contains: corujeira-air-card, corujeira-fire-card, corujeira-flow-card, corujeira-forecast-card, corujeira-hoot-card, corujeira-meteogram-card, corujeira-mirror-strategy, corujeira-silo-card, corujeira-since-card, corujeira-span-card, corujeira-zones-card. */
-console.info("%c A CORUJEIRA %c dashboard cards v1.31.0 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
+console.info("%c A CORUJEIRA %c dashboard cards v1.31.1 ", "background:#2E8B57;color:#fff;font-weight:700", "background:#E8E2D6;color:#343A40");
 
 // ---- corujeira-air-card.js
 /* A Corujeira air card: indoor air as one verdict in plain words. Data only, no advice (Eska, 24 Nov 2026: too hand-holdy).
@@ -2979,7 +2979,8 @@ if (!window.customCards.find(c => c.type === "corujeira-silo-card"))
      card:        the apexcharts-card config (graph_span and span are set by this wrapper)
      span_entity: optional input_select of spans such as 3h, 24h, 7d; any other option (such as "All") means
                   since the date. Pair it with corujeira-span-card on the same input_select for the pills.
-     starts:      optional; span options that start at another date entity, e.g.
+     starts:      optional; span options that start at another date entity (counted in 5 or 15 min steps
+                  while that date is under a day old, so the axis starts close to it), e.g.
                     starts: { Cycle: { entity: input_datetime.hot_compost_last_turn, label: "this cycle" } }
                   (a plain entity id works too; the label defaults to the option in lower case)
      title:       optional; sets the chart's header title to "<title> · <span>"
@@ -3012,17 +3013,23 @@ class CorujeiraSinceCard extends HTMLElement {
     const entity = st ? (typeof st === "string" ? st : st.entity) : this._c.entity;
     const label = st ? ((typeof st === "object" && st.label) || opt.toLowerCase()) : (this._c.since_label || "since the start");
     const t = this._startOf(entity);
-    const hours = t == null ? null : Math.max(1, Math.ceil((Date.now() - t) / 3600e3));
-    return { hours, label, key: `since:${entity}:${hours}` };
+    if (t == null) return { hours: null, label, key: `since:${entity}:none` };
+    /* a start from `starts` (such as the last turn) is often only minutes old, so its span is counted in
+       steps that grow with its age (5 min under 3 h, 15 min under a day, then whole hours): the axis
+       starts at most one step before the date */
+    const min = Math.max(1, (Date.now() - t) / 60e3);
+    const step = !st ? 60 : min < 180 ? 5 : min < 1440 ? 15 : 60;
+    const mins = Math.max(step, Math.ceil(min / step) * step);
+    return { hours: mins / 60, span: step === 60 ? `${mins / 60}h` : `${mins}min`, label, key: `since:${entity}:${mins}` };
   }
   _key() { return this._mode().key; }
   async _build() {
-    const { hours, label, key } = this._mode();
+    const { hours, span, label, key } = this._mode();
     if (this._card && key === this._hours) return;
     this._hours = key;
     const token = this._token = (this._token || 0) + 1;
     const cfg = JSON.parse(JSON.stringify(this._c.card));
-    if (hours != null) { cfg.graph_span = `${hours}h`; delete cfg.span; }
+    if (hours != null) { cfg.graph_span = span || `${hours}h`; delete cfg.span; }
     if (this._c.title) cfg.header = { ...(cfg.header || {}), title: `${this._c.title} · ${label}` };
     const h = await window.loadCardHelpers();
     if (token !== this._token) return;
